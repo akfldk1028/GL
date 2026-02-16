@@ -1,0 +1,239 @@
+using System;
+using System.Collections.Generic;
+using Golem.Infrastructure.Messages;
+using UnityEngine;
+
+public class AINetworkManager : MonoBehaviour
+{
+    public static AINetworkManager Instance { get; private set; }
+
+    private CFConnector _connector;
+    private bool _isConnected;
+
+    public static bool IsConnected => Instance != null && Instance._isConnected;
+
+    private void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        Instance = this;
+        DontDestroyOnLoad(gameObject);
+    }
+
+    private void Start()
+    {
+        _connector = CFConnector.instance;
+        if (_connector == null)
+        {
+            Debug.LogWarning("[AINetworkManager] CFConnector.instance is null. Will retry on Update.");
+            return;
+        }
+        SubscribeToEvents();
+    }
+
+    private void Update()
+    {
+        // Lazy connection if CFConnector wasn't ready at Start
+        if (_connector == null)
+        {
+            _connector = CFConnector.instance;
+            if (_connector != null)
+            {
+                SubscribeToEvents();
+            }
+        }
+    }
+
+    private void SubscribeToEvents()
+    {
+        Debug.Log("[AINetworkManager] Subscribing to CFConnector events...");
+
+        _connector.OnOpen += HandleOpen;
+        _connector.OnClose += HandleClose;
+        _connector.OnError += HandleError;
+        _connector.OnAgentState += HandleAgentState;
+        _connector.OnVoiceEmote += HandleVoiceEmote;
+        _connector.OnAnimatedEmote += HandleAnimatedEmote;
+        _connector.OnFacialExpression += HandleFacialExpression;
+        _connector.OnCharacterAction += HandleCharacterAction;
+
+        Debug.Log("[AINetworkManager] Subscribed to all CFConnector events.");
+    }
+
+    private void OnDestroy()
+    {
+        if (_connector != null)
+        {
+            try { _connector.OnOpen -= HandleOpen; } catch { }
+            try { _connector.OnClose -= HandleClose; } catch { }
+            try { _connector.OnError -= HandleError; } catch { }
+            try { _connector.OnAgentState -= HandleAgentState; } catch { }
+            try { _connector.OnVoiceEmote -= HandleVoiceEmote; } catch { }
+            try { _connector.OnAnimatedEmote -= HandleAnimatedEmote; } catch { }
+            try { _connector.OnFacialExpression -= HandleFacialExpression; } catch { }
+            try { _connector.OnCharacterAction -= HandleCharacterAction; } catch { }
+        }
+    }
+
+    // --- Event Handlers ---
+
+    private void HandleOpen()
+    {
+        _isConnected = true;
+        Debug.Log("[AINetworkManager] Connected to AI server");
+        Managers.PublishAction(ActionId.Agent_Connected);
+    }
+
+    private void HandleClose()
+    {
+        _isConnected = false;
+        Debug.Log("[AINetworkManager] Disconnected from AI server");
+        Managers.PublishAction(ActionId.Agent_Disconnected);
+    }
+
+    private void HandleError(Exception ex)
+    {
+        Debug.LogError($"[AINetworkManager] Error: {ex.Message}");
+        Managers.PublishAction(ActionId.Agent_Error, new AgentErrorPayload
+        {
+            ErrorMessage = ex.Message,
+            Exception = ex
+        });
+    }
+
+    private void HandleAgentState(CFConnector.AgentState state)
+    {
+        if (state == null) return;
+        Managers.PublishAction(ActionId.Agent_StateChanged, new AgentStatePayload
+        {
+            Status = state.state?.status ?? "unknown",
+            LastActionType = state.lastActionType ?? "",
+            RoutinesRunning = state.routinesRunning
+        });
+    }
+
+    private void HandleVoiceEmote(CFConnector.VoiceEmoteData data)
+    {
+        if (data == null) return;
+        Managers.PublishAction(ActionId.Agent_VoiceEmote, new VoiceEmotePayload
+        {
+            Type = data.type,
+            AudioBase64 = data.audioBase64
+        });
+    }
+
+    private void HandleAnimatedEmote(CFConnector.AnimatedEmoteData data)
+    {
+        if (data == null) return;
+        Managers.PublishAction(ActionId.Agent_AnimatedEmote, new AnimatedEmotePayload
+        {
+            Type = data.type,
+            AudioBase64 = data.audioBase64,
+            AnimationName = data.animation?.name ?? "",
+            AnimationDuration = data.animation?.duration ?? 0f
+        });
+    }
+
+    private void HandleFacialExpression(CFConnector.FacialExpressionData data)
+    {
+        if (data == null) return;
+        Managers.PublishAction(ActionId.Agent_FacialExpression, new FacialExpressionPayload
+        {
+            Expression = data.expression,
+            Intensity = data.intensity
+        });
+    }
+
+    private void HandleCharacterAction(CFConnector.CharacterActionData data)
+    {
+        if (data == null || data.action == null) return;
+
+        string actionType = data.action.type ?? "";
+        var parameters = data.action.parameters;
+
+        // Publish the generic CharacterAction payload
+        Managers.PublishAction(MapActionType(actionType), CreatePayloadForAction(actionType, parameters));
+
+        Debug.Log($"[AINetworkManager] Character action published: {actionType}");
+    }
+
+    private ActionId MapActionType(string type)
+    {
+        return type switch
+        {
+            "moveToLocation" => ActionId.Character_MoveToLocation,
+            "sitAtChair" => ActionId.Character_SitAtChair,
+            "standUp" => ActionId.Character_StandUp,
+            "examineMenu" => ActionId.Character_ExamineMenu,
+            "playArcadeGame" => ActionId.Character_PlayArcade,
+            "changeCameraAngle" => ActionId.Character_ChangeCameraAngle,
+            "idle" => ActionId.Character_Idle,
+            _ => ActionId.None
+        };
+    }
+
+    private IActionPayload CreatePayloadForAction(string type, Dictionary<string, object> parameters)
+    {
+        switch (type)
+        {
+            case "moveToLocation":
+                return new MoveToLocationPayload
+                {
+                    Location = GetParamString(parameters, "location") ?? "cafe"
+                };
+            case "sitAtChair":
+                return new SitAtChairPayload
+                {
+                    ChairNumber = GetParamInt(parameters, "chairNumber", 1)
+                };
+            case "examineMenu":
+                return new ExamineMenuPayload
+                {
+                    Focus = GetParamString(parameters, "focus")
+                };
+            case "playArcadeGame":
+                return new PlayArcadePayload
+                {
+                    Game = GetParamString(parameters, "game")
+                };
+            case "changeCameraAngle":
+                return new ChangeCameraAnglePayload
+                {
+                    Angle = GetParamString(parameters, "angle"),
+                    Transition = GetParamString(parameters, "transition")
+                };
+            case "idle":
+                return new IdlePayload
+                {
+                    IdleType = GetParamString(parameters, "idleType")
+                };
+            default:
+                return new CharacterActionPayload
+                {
+                    ActionType = type,
+                    Parameters = parameters
+                };
+        }
+    }
+
+    // Helper methods for parameter extraction
+    private static string GetParamString(Dictionary<string, object> parameters, string key)
+    {
+        if (parameters == null || !parameters.ContainsKey(key)) return null;
+        return parameters[key]?.ToString();
+    }
+
+    private static int GetParamInt(Dictionary<string, object> parameters, string key, int defaultValue)
+    {
+        if (parameters == null || !parameters.ContainsKey(key)) return defaultValue;
+        var val = parameters[key];
+        if (val is long l) return (int)l;
+        if (val is int i) return i;
+        if (val is double d) return (int)d;
+        if (int.TryParse(val?.ToString(), out int parsed)) return parsed;
+        return defaultValue;
+    }
+}
