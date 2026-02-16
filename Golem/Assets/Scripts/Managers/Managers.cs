@@ -18,6 +18,9 @@ public class Managers : MonoBehaviour
     private StateMachine _stateMachine;
     private ActionTypeRegistry _actionTypeRegistry;
     private AgentManager _agent;
+    private PoolManager _pool;
+    private ResourceManager _resource;
+    private DataManager _data;
 
     // ── Public accessors ───────────────────────────────────────
     public static Managers Instance
@@ -45,6 +48,9 @@ public class Managers : MonoBehaviour
     public static StateMachine State => Instance?._stateMachine;
     public static ActionTypeRegistry Registry => Instance?._actionTypeRegistry;
     public static AgentManager Agent => Instance?._agent;
+    public static PoolManager Pool => Instance?._pool;
+    public static ResourceManager Resource => Instance?._resource;
+    public static DataManager Data => Instance?._data;
     public static StateId CurrentStateId => Instance?._stateMachine?.CurrentId ?? StateId.None;
 
     // ── Lifecycle ──────────────────────────────────────────────
@@ -76,6 +82,9 @@ public class Managers : MonoBehaviour
         m._stateMachine = new StateMachine(m._actionBus);
         m._actionTypeRegistry = new ActionTypeRegistry();
         m._agent = new AgentManager();
+        m._pool = new PoolManager();
+        m._resource = new ResourceManager();
+        m._data = new DataManager();
 
         Debug.Log("[Managers] All sub-systems initialized.");
     }

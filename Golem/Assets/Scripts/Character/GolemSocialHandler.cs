@@ -73,8 +73,8 @@ public class GolemSocialHandler : MonoBehaviour
             Vector3 target = payload.Position;
             if (target == Vector3.zero && !string.IsNullOrEmpty(payload.Target))
             {
-                var t = GameObject.Find(payload.Target);
-                if (t != null) target = t.transform.position;
+                var t = FindTransformByNameContains(payload.Target);
+                if (t != null) target = t.position;
             }
             if (target != Vector3.zero)
             {
@@ -87,5 +87,19 @@ public class GolemSocialHandler : MonoBehaviour
 
         animator.SetTrigger("Point");
         Debug.Log("[GolemSocialHandler] Point");
+    }
+
+    private Transform FindTransformByNameContains(string namePart)
+    {
+        if (string.IsNullOrEmpty(namePart)) return null;
+        var all = FindObjectsOfType<Transform>();
+        namePart = namePart.ToLower();
+        foreach (var t in all)
+        {
+            if (t == null || t.gameObject == null) continue;
+            if (t.name != null && t.name.ToLower().Contains(namePart))
+                return t;
+        }
+        return null;
     }
 }

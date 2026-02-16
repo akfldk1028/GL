@@ -388,6 +388,40 @@ public class PointClickController : MonoBehaviour
             animator.SetTrigger("ToStand");
             isStandingUp = true;
             enteredStandState = false;
+            return;
         }
+
+        // Reset non-sitting interaction states
+        if (isLooking)
+        {
+            isLooking = false;
+            agent.enabled = true;
+            animator.SetBool("LookingDown", false);
+        }
+        else if (isLeaning)
+        {
+            isLeaning = false;
+            agent.enabled = true;
+            animator.SetBool("Leaning", false);
+        }
+        else if (isPlayingClaw)
+        {
+            isPlayingClaw = false;
+            agent.enabled = true;
+            animator.SetBool("PlayingClawMachine", false);
+        }
+        else if (isPlayingArcade)
+        {
+            isPlayingArcade = false;
+            agent.enabled = true;
+            animator.SetTrigger("ToStopArcade");
+        }
+
+        // Clear all pending movement flags
+        goingToSit = false;
+        goingToLook = false;
+        goingToLean = false;
+        goingToPlayClaw = false;
+        goingToPlayArcade = false;
     }
 }

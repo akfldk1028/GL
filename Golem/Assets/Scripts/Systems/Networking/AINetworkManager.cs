@@ -172,7 +172,10 @@ public class AINetworkManager : MonoBehaviour
         }
 
         var payload = registry.CreatePayload(actionId, parameters);
-        Managers.PublishAction(actionId, payload);
+        if (payload != null)
+            Managers.PublishAction(actionId, payload);
+        else
+            Managers.PublishAction(actionId);
 
         Debug.Log($"[AINetworkManager] Character action published: {actionType} → {actionId}");
     }

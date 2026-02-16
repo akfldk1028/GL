@@ -59,10 +59,27 @@ public class CompositeActionExecutor : MonoBehaviour
             var sub = actions[i];
             bool completed = false;
 
-            // Subscribe to ActionCompleted for this sub-action
+            // Resolve the ActionId for correlation matching
+            var registry = Managers.Registry;
+            var expectedActionId = registry != null ? registry.MapToActionId(sub.Type) : ActionId.None;
+
+            // Subscribe to ActionCompleted — only match if SourceAction correlates
             IDisposable completionSub = Managers.Subscribe(ActionId.Agent_ActionCompleted, (ActionMessage m) =>
             {
-                completed = true;
+                if (m.TryGetPayload<ActionLifecyclePayload>(out var lifecycle))
+                {
+                    // Match by ActionId or by ActionName string
+                    if (lifecycle.SourceAction == expectedActionId ||
+                        string.Equals(lifecycle.ActionName, sub.Type, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        completed = true;
+                    }
+                }
+                else
+                {
+                    // No payload — accept any completion (backward compat)
+                    completed = true;
+                }
             });
 
             DispatchSubAction(sub);

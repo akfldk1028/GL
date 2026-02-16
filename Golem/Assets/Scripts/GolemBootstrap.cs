@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Golem.Infrastructure.State;
 using UnityEngine;
 
@@ -99,25 +100,41 @@ public class GolemBootstrap : MonoBehaviour
 
     private void RegisterStates()
     {
-        // Register basic states for the state machine
-        Managers.RegisterState(new SimpleState(StateId.Boot));
-        Managers.RegisterState(new SimpleState(StateId.Initializing));
-        Managers.RegisterState(new SimpleState(StateId.Connected));
-        Managers.RegisterState(new SimpleState(StateId.Disconnected));
-        Managers.RegisterState(new SimpleState(StateId.Active));
-        Managers.RegisterState(new SimpleState(StateId.Idle));
-        Managers.RegisterState(new SimpleState(StateId.Performing));
+        // States that transition to Connected on Agent_Connected
+        var onConnected = new Dictionary<Golem.Infrastructure.Messages.ActionId, StateId>
+        {
+            { Golem.Infrastructure.Messages.ActionId.Agent_Connected, StateId.Connected }
+        };
+
+        // States that transition to Disconnected on Agent_Disconnected
+        var onDisconnected = new Dictionary<Golem.Infrastructure.Messages.ActionId, StateId>
+        {
+            { Golem.Infrastructure.Messages.ActionId.Agent_Disconnected, StateId.Disconnected }
+        };
+
+        Managers.RegisterState(new SimpleState(StateId.Boot, onConnected));
+        Managers.RegisterState(new SimpleState(StateId.Initializing, onConnected));
+        Managers.RegisterState(new SimpleState(StateId.Disconnected, onConnected));
+        Managers.RegisterState(new SimpleState(StateId.Connected, onDisconnected));
+        Managers.RegisterState(new SimpleState(StateId.Active, onDisconnected));
+        Managers.RegisterState(new SimpleState(StateId.Idle, onDisconnected));
+        Managers.RegisterState(new SimpleState(StateId.Performing, onDisconnected));
     }
 
     /// <summary>
-    /// Simple state implementation for initial registration.
-    /// Logs Enter/Exit transitions. Can be replaced with proper state classes later.
+    /// Simple state with configurable transitions.
+    /// Each state only handles the ActionIds specified in its transitions dictionary.
     /// </summary>
     private class SimpleState : IState
     {
         public StateId Id { get; }
+        private readonly Dictionary<Golem.Infrastructure.Messages.ActionId, StateId> _transitions;
 
-        public SimpleState(StateId id) { Id = id; }
+        public SimpleState(StateId id, Dictionary<Golem.Infrastructure.Messages.ActionId, StateId> transitions)
+        {
+            Id = id;
+            _transitions = transitions;
+        }
 
         public void Enter()
         {
@@ -131,19 +148,14 @@ public class GolemBootstrap : MonoBehaviour
 
         public bool CanHandle(Golem.Infrastructure.Messages.ActionId actionId)
         {
-            return actionId == Golem.Infrastructure.Messages.ActionId.Agent_Connected ||
-                   actionId == Golem.Infrastructure.Messages.ActionId.Agent_Disconnected;
+            return _transitions.ContainsKey(actionId);
         }
 
         public void Handle(Golem.Infrastructure.Messages.ActionMessage message)
         {
-            if (message.Id == Golem.Infrastructure.Messages.ActionId.Agent_Connected)
+            if (_transitions.TryGetValue(message.Id, out var targetState))
             {
-                Managers.SetState(StateId.Connected);
-            }
-            else if (message.Id == Golem.Infrastructure.Messages.ActionId.Agent_Disconnected)
-            {
-                Managers.SetState(StateId.Disconnected);
+                Managers.SetState(targetState);
             }
         }
     }
