@@ -2,18 +2,20 @@ using System;
 using System.Collections.Generic;
 using Golem.Infrastructure.Messages;
 using UnityEngine;
+using UnityEngine.AI;
 
 /// <summary>
-/// ActionBus-based character controller. Subscribes to Character_* ActionIds
+/// ActionBus-based character controller. Subscribes to Character_* and Camera_* ActionIds
 /// and drives PointClickController directly (no SendMessage).
-/// Works in parallel with existing CharacterActionController.
 /// </summary>
 public class GolemCharacterController : MonoBehaviour
 {
     [Header("References")]
     [SerializeField] private PointClickController pointClick;
     [SerializeField] private CameraStateMachine cameraStateMachine;
+    [SerializeField] private Animator animator;
 
+    private NavMeshAgent _navAgent;
     private List<IDisposable> _subscriptions = new List<IDisposable>();
 
     private void Start()
@@ -29,14 +31,32 @@ public class GolemCharacterController : MonoBehaviour
                 cameraStateMachine = cam.GetComponent<CameraStateMachine>();
         }
 
-        // Subscribe to ActionBus
+        if (animator == null)
+            animator = GetComponent<Animator>() ?? GetComponentInChildren<Animator>();
+
+        _navAgent = GetComponent<NavMeshAgent>();
+
+        // ── Locomotion ──
         _subscriptions.Add(Managers.Subscribe(ActionId.Character_MoveToLocation, OnMoveToLocation));
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_WalkTo, OnMoveToLocation)); // same handler
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_RunTo, OnMoveToLocation));   // same handler
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_Stop, OnStop));
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_TurnTo, OnTurnTo));
+
+        // ── Posture ──
         _subscriptions.Add(Managers.Subscribe(ActionId.Character_SitAtChair, OnSitAtChair));
         _subscriptions.Add(Managers.Subscribe(ActionId.Character_StandUp, OnStandUp));
-        _subscriptions.Add(Managers.Subscribe(ActionId.Character_ExamineMenu, OnExamineMenu));
-        _subscriptions.Add(Managers.Subscribe(ActionId.Character_PlayArcade, OnPlayArcade));
-        _subscriptions.Add(Managers.Subscribe(ActionId.Character_ChangeCameraAngle, OnChangeCameraAngle));
         _subscriptions.Add(Managers.Subscribe(ActionId.Character_Idle, OnIdle));
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_Lean, OnLean));
+
+        // ── Interaction ──
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_ExamineMenu, OnExamineMenu));
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_LookAt, OnLookAt));
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_PlayArcade, OnPlayArcade));
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_PlayClaw, OnPlayClaw));
+
+        // ── Camera ──
+        _subscriptions.Add(Managers.Subscribe(ActionId.Camera_ChangeAngle, OnChangeCameraAngle));
 
         Debug.Log("[GolemCharacterController] Subscribed to ActionBus character events.");
     }
@@ -48,26 +68,52 @@ public class GolemCharacterController : MonoBehaviour
         _subscriptions.Clear();
     }
 
-    // --- Action Handlers ---
+    // ── Locomotion Handlers ────────────────────────────────────
 
     private void OnMoveToLocation(ActionMessage msg)
     {
         if (pointClick == null) return;
         if (msg.TryGetPayload<MoveToLocationPayload>(out var payload))
         {
-            // If destination is set (non-zero), use it directly
             if (payload.Destination != Vector3.zero)
             {
                 pointClick.MoveToPointPublic(payload.Destination);
                 return;
             }
 
-            // Otherwise find by location name
             var target = FindTransformByNameContains(payload.Location);
             Vector3 dest = target != null ? target.position : transform.position;
             pointClick.MoveToPointPublic(dest);
         }
     }
+
+    private void OnStop(ActionMessage msg)
+    {
+        if (_navAgent != null && _navAgent.enabled)
+            _navAgent.ResetPath();
+    }
+
+    private void OnTurnTo(ActionMessage msg)
+    {
+        if (msg.TryGetPayload<GazePayload>(out var payload))
+        {
+            Vector3 target = payload.Position;
+            if (target == Vector3.zero && !string.IsNullOrEmpty(payload.Target))
+            {
+                var t = FindTransformByNameContains(payload.Target);
+                if (t != null) target = t.position;
+            }
+            if (target != Vector3.zero)
+            {
+                Vector3 dir = (target - transform.position);
+                dir.y = 0;
+                if (dir.sqrMagnitude > 0.01f)
+                    transform.rotation = Quaternion.LookRotation(dir);
+            }
+        }
+    }
+
+    // ── Posture Handlers ───────────────────────────────────────
 
     private void OnSitAtChair(ActionMessage msg)
     {
@@ -96,6 +142,40 @@ public class GolemCharacterController : MonoBehaviour
         pointClick.ForceStandUp();
     }
 
+    private void OnIdle(ActionMessage msg)
+    {
+        if (pointClick == null) return;
+        if (msg.TryGetPayload<IdlePayload>(out var payload))
+        {
+            string idleType = payload.IdleType ?? "standing";
+            if (idleType == "standing")
+                pointClick.ForceStandUp();
+            else if (idleType == "sitting")
+                OnSitAtChair(ActionMessage.From(ActionId.Character_SitAtChair, new SitAtChairPayload { ChairNumber = 1 }));
+            else if (idleType == "leaning")
+                OnLean(msg);
+        }
+    }
+
+    private void OnLean(ActionMessage msg)
+    {
+        if (pointClick == null) return;
+        GameObject[] chairs = null;
+        try { chairs = GameObject.FindGameObjectsWithTag("Slot Machine Chair"); } catch { }
+        if (chairs != null && chairs.Length > 0)
+        {
+            var chosen = chairs[0];
+            var interaction = chosen.transform.Find("InteractionSpot");
+            pointClick.SitAtInteractionSpot(interaction != null ? interaction : chosen.transform);
+        }
+        else
+        {
+            Debug.LogWarning("[GolemCharacterController] No slot machine chairs found.");
+        }
+    }
+
+    // ── Interaction Handlers ───────────────────────────────────
+
     private void OnExamineMenu(ActionMessage msg)
     {
         if (pointClick == null) return;
@@ -110,6 +190,21 @@ public class GolemCharacterController : MonoBehaviour
         else
         {
             Debug.LogWarning("[GolemCharacterController] No ad displays found with tag 'Cafe Ad Display'.");
+        }
+    }
+
+    private void OnLookAt(ActionMessage msg)
+    {
+        if (msg.TryGetPayload<GazePayload>(out var payload))
+        {
+            Vector3 target = payload.Position;
+            if (target == Vector3.zero && !string.IsNullOrEmpty(payload.Target))
+            {
+                var t = FindTransformByNameContains(payload.Target);
+                if (t != null) target = t.position;
+            }
+            if (target != Vector3.zero)
+                transform.LookAt(target);
         }
     }
 
@@ -130,12 +225,30 @@ public class GolemCharacterController : MonoBehaviour
         }
     }
 
+    private void OnPlayClaw(ActionMessage msg)
+    {
+        if (pointClick == null) return;
+        GameObject[] claws = null;
+        try { claws = GameObject.FindGameObjectsWithTag("Claw Machine"); } catch { }
+        if (claws != null && claws.Length > 0)
+        {
+            var chosen = claws[0];
+            var interaction = chosen.transform.Find("InteractionSpot");
+            pointClick.PlayClawAtSpot(interaction != null ? interaction : chosen.transform);
+        }
+        else
+        {
+            Debug.LogWarning("[GolemCharacterController] No claw machines found.");
+        }
+    }
+
+    // ── Camera Handler ─────────────────────────────────────────
+
     private void OnChangeCameraAngle(ActionMessage msg)
     {
         if (cameraStateMachine == null) return;
         if (msg.TryGetPayload<ChangeCameraAnglePayload>(out var payload))
         {
-            // Load CameraStateSO by name from Resources
             var stateSO = Resources.Load<CameraStateSO>($"CameraStates/{payload.Angle}");
             if (stateSO != null)
             {
@@ -148,25 +261,12 @@ public class GolemCharacterController : MonoBehaviour
         }
     }
 
-    private void OnIdle(ActionMessage msg)
-    {
-        if (pointClick == null) return;
-        if (msg.TryGetPayload<IdlePayload>(out var payload))
-        {
-            string idleType = payload.IdleType ?? "standing";
-            if (idleType == "standing")
-                pointClick.ForceStandUp();
-            else if (idleType == "sitting")
-                OnSitAtChair(ActionMessage.From(ActionId.Character_SitAtChair, new SitAtChairPayload { ChairNumber = 1 }));
-        }
-    }
-
-    // --- Helpers ---
+    // ── Helpers ─────────────────────────────────────────────────
 
     private Transform FindTransformByNameContains(string namePart)
     {
         if (string.IsNullOrEmpty(namePart)) return null;
-        var all = GameObject.FindObjectsOfType<Transform>();
+        var all = FindObjectsOfType<Transform>();
         namePart = namePart.ToLower();
         foreach (var t in all)
         {

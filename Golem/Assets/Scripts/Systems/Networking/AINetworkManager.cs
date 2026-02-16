@@ -36,14 +36,11 @@ public class AINetworkManager : MonoBehaviour
 
     private void Update()
     {
-        // Lazy connection if CFConnector wasn't ready at Start
         if (_connector == null)
         {
             _connector = CFConnector.instance;
             if (_connector != null)
-            {
                 SubscribeToEvents();
-            }
         }
     }
 
@@ -100,7 +97,7 @@ public class AINetworkManager : MonoBehaviour
         Managers.PublishAction(ActionId.Agent_Error, new AgentErrorPayload
         {
             ErrorMessage = ex.Message,
-            Exception = ex
+            Exception = ex.ToString()
         });
     }
 
@@ -153,86 +150,30 @@ public class AINetworkManager : MonoBehaviour
 
         string actionType = data.action.type ?? "";
         var parameters = data.action.parameters;
+        var registry = Managers.Registry;
 
-        // Publish the specific action type with its payload
-        Managers.PublishAction(MapActionType(actionType), CreatePayloadForAction(actionType, parameters));
-
-        Debug.Log($"[AINetworkManager] Character action published: {actionType}");
-    }
-
-    private ActionId MapActionType(string type)
-    {
-        return type switch
+        if (registry == null)
         {
-            "moveToLocation" => ActionId.Character_MoveToLocation,
-            "sitAtChair" => ActionId.Character_SitAtChair,
-            "standUp" => ActionId.Character_StandUp,
-            "examineMenu" => ActionId.Character_ExamineMenu,
-            "playArcadeGame" => ActionId.Character_PlayArcade,
-            "changeCameraAngle" => ActionId.Character_ChangeCameraAngle,
-            "idle" => ActionId.Character_Idle,
-            _ => ActionId.None
-        };
-    }
-
-    private IActionPayload CreatePayloadForAction(string type, Dictionary<string, object> parameters)
-    {
-        switch (type)
-        {
-            case "moveToLocation":
-                return new MoveToLocationPayload
-                {
-                    Location = GetParamString(parameters, "location") ?? "cafe"
-                };
-            case "sitAtChair":
-                return new SitAtChairPayload
-                {
-                    ChairNumber = GetParamInt(parameters, "chairNumber", 1)
-                };
-            case "examineMenu":
-                return new ExamineMenuPayload
-                {
-                    Focus = GetParamString(parameters, "focus")
-                };
-            case "playArcadeGame":
-                return new PlayArcadePayload
-                {
-                    Game = GetParamString(parameters, "game")
-                };
-            case "changeCameraAngle":
-                return new ChangeCameraAnglePayload
-                {
-                    Angle = GetParamString(parameters, "angle"),
-                    Transition = GetParamString(parameters, "transition")
-                };
-            case "idle":
-                return new IdlePayload
-                {
-                    IdleType = GetParamString(parameters, "idleType")
-                };
-            default:
-                return new CharacterActionPayload
-                {
-                    ActionType = type,
-                    Parameters = parameters
-                };
+            Debug.LogWarning("[AINetworkManager] ActionTypeRegistry not initialized.");
+            return;
         }
-    }
 
-    private static string GetParamString(Dictionary<string, object> parameters, string key)
-    {
-        if (parameters == null || !parameters.ContainsKey(key)) return null;
-        return parameters[key]?.ToString();
-    }
+        var actionId = registry.MapToActionId(actionType);
 
-    private static int GetParamInt(Dictionary<string, object> parameters, string key, int defaultValue)
-    {
-        if (parameters == null || !parameters.ContainsKey(key)) return defaultValue;
-        var val = parameters[key];
-        if (val is long l) return (int)l;
-        if (val is int i) return i;
-        if (val is double d) return (int)d;
-        if (int.TryParse(val?.ToString(), out int parsed)) return parsed;
-        return defaultValue;
+        if (actionId == ActionId.None)
+        {
+            Debug.LogWarning($"[AINetworkManager] Unknown action type: {actionType}");
+            Managers.PublishAction(ActionId.None, new CharacterActionPayload
+            {
+                ActionType = actionType,
+                Parameters = parameters
+            });
+            return;
+        }
+
+        var payload = registry.CreatePayload(actionId, parameters);
+        Managers.PublishAction(actionId, payload);
+
+        Debug.Log($"[AINetworkManager] Character action published: {actionType} → {actionId}");
     }
 }

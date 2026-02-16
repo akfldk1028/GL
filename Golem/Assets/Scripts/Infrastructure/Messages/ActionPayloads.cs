@@ -3,260 +3,165 @@ using UnityEngine;
 
 namespace Golem.Infrastructure.Messages
 {
-    /// <summary>
-    /// Payload for Character_MoveToLocation action
-    /// Maps to character movement commands
-    /// </summary>
-    public class MoveToLocationPayload : IActionPayload
-    {
-        /// <summary>
-        /// The named location to move to (e.g., "bar", "chair_1")
-        /// </summary>
-        public string Location { get; set; }
+    // ── AGENT META PAYLOADS ─────────────────────────────────────
 
-        /// <summary>
-        /// The destination position in world space
-        /// </summary>
-        public Vector3 Destination { get; set; }
-
-        public MoveToLocationPayload(string location, Vector3 destination)
-        {
-            Location = location;
-            Destination = destination;
-        }
-    }
-
-    /// <summary>
-    /// Payload for Character_SitAtChair action
-    /// </summary>
-    public class SitAtChairPayload : IActionPayload
-    {
-        /// <summary>
-        /// The chair number to sit at
-        /// </summary>
-        public int ChairNumber { get; set; }
-
-        public SitAtChairPayload(int chairNumber)
-        {
-            ChairNumber = chairNumber;
-        }
-    }
-
-    /// <summary>
-    /// Payload for Agent_VoiceEmote action
-    /// Maps CFConnector.VoiceEmoteData
-    /// </summary>
-    public class VoiceEmotePayload : IActionPayload
-    {
-        /// <summary>
-        /// The emote type (e.g., "voice")
-        /// </summary>
-        public string Type { get; set; }
-
-        /// <summary>
-        /// Base64-encoded audio data
-        /// </summary>
-        public string AudioBase64 { get; set; }
-
-        public VoiceEmotePayload(string type, string audioBase64)
-        {
-            Type = type;
-            AudioBase64 = audioBase64;
-        }
-    }
-
-    /// <summary>
-    /// Payload for Agent_AnimatedEmote action
-    /// Maps CFConnector.AnimatedEmoteData
-    /// </summary>
-    public class AnimatedEmotePayload : IActionPayload
-    {
-        /// <summary>
-        /// The emote type (e.g., "animated")
-        /// </summary>
-        public string Type { get; set; }
-
-        /// <summary>
-        /// Base64-encoded audio data
-        /// </summary>
-        public string AudioBase64 { get; set; }
-
-        /// <summary>
-        /// The animation name to play
-        /// </summary>
-        public string AnimationName { get; set; }
-
-        /// <summary>
-        /// Duration of the animation in seconds
-        /// </summary>
-        public float AnimationDuration { get; set; }
-
-        public AnimatedEmotePayload(string type, string audioBase64, string animationName, float animationDuration)
-        {
-            Type = type;
-            AudioBase64 = audioBase64;
-            AnimationName = animationName;
-            AnimationDuration = animationDuration;
-        }
-    }
-
-    /// <summary>
-    /// Payload for Emote_FacialExpression action
-    /// Maps CFConnector.FacialExpressionData
-    /// </summary>
-    public class FacialExpressionPayload : IActionPayload
-    {
-        /// <summary>
-        /// The facial expression (e.g., "happy", "sad", "angry")
-        /// </summary>
-        public string Expression { get; set; }
-
-        /// <summary>
-        /// Expression intensity (0.0 to 1.0)
-        /// </summary>
-        public float Intensity { get; set; }
-
-        public FacialExpressionPayload(string expression, float intensity)
-        {
-            Expression = expression;
-            Intensity = intensity;
-        }
-    }
-
-    /// <summary>
-    /// Payload for Agent_StateChanged action
-    /// Maps CFConnector.AgentState
-    /// </summary>
     public class AgentStatePayload : IActionPayload
     {
-        /// <summary>
-        /// The agent status (from AgentState.state.status)
-        /// </summary>
         public string Status { get; set; }
-
-        /// <summary>
-        /// Last action type the agent performed
-        /// </summary>
         public string LastActionType { get; set; }
-
-        /// <summary>
-        /// Whether routines are currently running
-        /// </summary>
         public bool RoutinesRunning { get; set; }
-
-        public AgentStatePayload(string status, string lastActionType, bool routinesRunning)
-        {
-            Status = status;
-            LastActionType = lastActionType;
-            RoutinesRunning = routinesRunning;
-        }
     }
 
-    /// <summary>
-    /// Payload for Agent_Error action
-    /// </summary>
     public class AgentErrorPayload : IActionPayload
     {
-        /// <summary>
-        /// The error message
-        /// </summary>
         public string ErrorMessage { get; set; }
-
-        /// <summary>
-        /// Exception details (if available)
-        /// </summary>
         public string Exception { get; set; }
-
-        public AgentErrorPayload(string errorMessage, string exception = null)
-        {
-            ErrorMessage = errorMessage;
-            Exception = exception;
-        }
     }
 
     /// <summary>
-    /// Payload for generic character actions
-    /// Maps CFConnector.CharacterActionData
+    /// Shared payload for Agent_ActionStarted / ActionCompleted / ActionFailed.
     /// </summary>
-    public class CharacterActionPayload : IActionPayload
+    public class ActionLifecyclePayload : IActionPayload
     {
-        /// <summary>
-        /// The action type (e.g., "move", "sit", "examine")
-        /// </summary>
-        public string ActionType { get; set; }
-
-        /// <summary>
-        /// Extensible parameters dictionary
-        /// </summary>
-        public Dictionary<string, object> Parameters { get; set; }
-
-        public CharacterActionPayload(string actionType, Dictionary<string, object> parameters = null)
-        {
-            ActionType = actionType;
-            Parameters = parameters ?? new Dictionary<string, object>();
-        }
+        public ActionId SourceAction { get; set; }
+        public string ActionName { get; set; }
+        public bool Success { get; set; }
+        public string Error { get; set; }
+        public float Duration { get; set; }
     }
 
-    /// <summary>
-    /// Payload for Character_ExamineMenu action
-    /// </summary>
-    public class ExamineMenuPayload : IActionPayload
+    // ── EXPRESSION / EMOTE PAYLOADS ─────────────────────────────
+
+    public class VoiceEmotePayload : IActionPayload
     {
-        /// <summary>
-        /// The menu ID to examine
-        /// </summary>
-        public string MenuId { get; set; }
-
-        public ExamineMenuPayload(string menuId)
-        {
-            MenuId = menuId;
-        }
+        public string Type { get; set; }
+        public string AudioBase64 { get; set; }
     }
 
-    /// <summary>
-    /// Payload for Character_PlayArcade action
-    /// </summary>
-    public class PlayArcadePayload : IActionPayload
+    public class AnimatedEmotePayload : IActionPayload
     {
-        /// <summary>
-        /// The arcade game ID to play
-        /// </summary>
-        public string ArcadeId { get; set; }
-
-        public PlayArcadePayload(string arcadeId)
-        {
-            ArcadeId = arcadeId;
-        }
+        public string Type { get; set; }
+        public string AudioBase64 { get; set; }
+        public string AnimationName { get; set; }
+        public float AnimationDuration { get; set; }
     }
 
-    /// <summary>
-    /// Payload for Camera_ChangeAngle action
-    /// </summary>
-    public class ChangeCameraAnglePayload : IActionPayload
+    public class FacialExpressionPayload : IActionPayload
     {
-        /// <summary>
-        /// The camera angle identifier
-        /// </summary>
-        public int AngleId { get; set; }
-
-        public ChangeCameraAnglePayload(int angleId)
-        {
-            AngleId = angleId;
-        }
+        public string Expression { get; set; }
+        public float Intensity { get; set; }
     }
 
     /// <summary>
-    /// Payload for Emote_Idle action (marker payload, no data)
+    /// BML gesture payload — name + dominant hand.
     /// </summary>
+    public class GesturePayload : IActionPayload
+    {
+        public string Name { get; set; }
+        public string Hand { get; set; } // "left", "right", "both"
+    }
+
+    /// <summary>
+    /// BML gaze payload — target name or world position.
+    /// </summary>
+    public class GazePayload : IActionPayload
+    {
+        public string Target { get; set; }
+        public Vector3 Position { get; set; }
+    }
+
+    // ── LOCOMOTION PAYLOADS ─────────────────────────────────────
+
+    public class MoveToLocationPayload : IActionPayload
+    {
+        public string Location { get; set; }
+        public Vector3 Destination { get; set; }
+    }
+
+    // ── POSTURE PAYLOADS ────────────────────────────────────────
+
+    public class SitAtChairPayload : IActionPayload
+    {
+        public int ChairNumber { get; set; }
+    }
+
     public class IdlePayload : IActionPayload
     {
-        /// <summary>
-        /// Singleton instance for idle payload
-        /// </summary>
-        public static readonly IdlePayload Instance = new IdlePayload();
+        public string IdleType { get; set; } // "standing", "sitting", "leaning"
+    }
 
-        private IdlePayload()
+    // ── INTERACTION PAYLOADS ────────────────────────────────────
+
+    public class ExamineMenuPayload : IActionPayload
+    {
+        public string Focus { get; set; }
+    }
+
+    public class PlayArcadePayload : IActionPayload
+    {
+        public string Game { get; set; }
+    }
+
+    // ── CAMERA PAYLOADS ─────────────────────────────────────────
+
+    public class ChangeCameraAnglePayload : IActionPayload
+    {
+        public string Angle { get; set; }
+        public string Transition { get; set; }
+    }
+
+    // ── GENERIC / FALLBACK ──────────────────────────────────────
+
+    public class CharacterActionPayload : IActionPayload
+    {
+        public string ActionType { get; set; }
+        public Dictionary<string, object> Parameters { get; set; }
+
+        public CharacterActionPayload()
         {
+            Parameters = new Dictionary<string, object>();
         }
+    }
+
+    // ── COMPOSITE PAYLOADS ── BML sync + Generative Agents ──────
+
+    /// <summary>
+    /// Composite_MultiAction — parallel execution of sub-actions.
+    /// </summary>
+    public class MultiActionPayload : IActionPayload
+    {
+        public List<SubAction> Actions { get; set; } = new List<SubAction>();
+    }
+
+    /// <summary>
+    /// Composite_Sequence — sequential execution of sub-actions.
+    /// </summary>
+    public class SequencePayload : IActionPayload
+    {
+        public List<SubAction> Actions { get; set; } = new List<SubAction>();
+    }
+
+    /// <summary>
+    /// Lightweight sub-action descriptor used inside Composite payloads.
+    /// </summary>
+    public class SubAction
+    {
+        public string Type { get; set; }
+        public Dictionary<string, object> Parameters { get; set; }
+
+        public SubAction()
+        {
+            Parameters = new Dictionary<string, object>();
+        }
+    }
+
+    // ── FEEDBACK PAYLOADS ───────────────────────────────────────
+
+    public class ActionResultPayload : IActionPayload
+    {
+        public ActionId SourceAction { get; set; }
+        public string ActionName { get; set; }
+        public bool Success { get; set; }
+        public string Error { get; set; }
     }
 }

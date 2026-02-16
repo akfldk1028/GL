@@ -39,13 +39,21 @@ public class GolemBootstrap : MonoBehaviour
         // Step 3: Create Debug Overlay (development builds only)
         CreateDebugOverlay();
 
-        // Step 4: Register initial states
-        RegisterStates();
-        Debug.Log("[GolemBootstrap] Step 4: States registered.");
+        // Step 4: Create CompositeActionExecutor (BML sync patterns)
+        CreateCompositeExecutor();
+        Debug.Log("[GolemBootstrap] Step 4: CompositeActionExecutor created.");
 
-        // Step 5: Set initial state
+        // Step 5: Create GolemActionGate (disable legacy controller)
+        CreateActionGate();
+        Debug.Log("[GolemBootstrap] Step 5: GolemActionGate created.");
+
+        // Step 6: Register initial states
+        RegisterStates();
+        Debug.Log("[GolemBootstrap] Step 6: States registered.");
+
+        // Step 7: Set initial state
         Managers.SetState(StateId.Boot);
-        Debug.Log("[GolemBootstrap] Step 5: Initial state set to Boot.");
+        Debug.Log("[GolemBootstrap] Step 7: Initial state set to Boot.");
 
         Debug.Log("[GolemBootstrap] === Golem AI Agent System Ready ===");
     }
@@ -73,6 +81,20 @@ public class GolemBootstrap : MonoBehaviour
 #else
         Debug.Log("[GolemBootstrap] Step 3: Debug overlay skipped (release build).");
 #endif
+    }
+
+    private void CreateCompositeExecutor()
+    {
+        var go = new GameObject("@CompositeActionExecutor");
+        DontDestroyOnLoad(go);
+        go.AddComponent<CompositeActionExecutor>();
+    }
+
+    private void CreateActionGate()
+    {
+        var go = new GameObject("@GolemActionGate");
+        DontDestroyOnLoad(go);
+        go.AddComponent<GolemActionGate>();
     }
 
     private void RegisterStates()

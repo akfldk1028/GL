@@ -367,6 +367,20 @@ public class PointClickController : MonoBehaviour
         MoveCharacterToPoint(interaction.position);
     }
 
+    public void PlayClawAtSpot(Transform interaction)
+    {
+        if (disabledCollider != null)
+            disabledCollider.enabled = true;
+
+        disabledCollider = interaction.GetComponentInParent<Collider>();
+        if (disabledCollider != null)
+            disabledCollider.enabled = false;
+
+        interactionSpot = interaction;
+        goingToPlayClaw = true;
+        MoveCharacterToPoint(interaction.position);
+    }
+
     public void ForceStandUp()
     {
         if (isSitting && !isStandingUp)
