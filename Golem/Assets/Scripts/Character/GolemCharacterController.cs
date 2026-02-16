@@ -107,6 +107,10 @@ public class GolemCharacterController : MonoBehaviour
             var interaction = chosen.transform.Find("InteractionSpot");
             pointClick.ExamineAtInteractionSpot(interaction != null ? interaction : chosen.transform);
         }
+        else
+        {
+            Debug.LogWarning("[GolemCharacterController] No ad displays found with tag 'Cafe Ad Display'.");
+        }
     }
 
     private void OnPlayArcade(ActionMessage msg)
@@ -119,6 +123,10 @@ public class GolemCharacterController : MonoBehaviour
             var chosen = arcades[0];
             var interaction = chosen.transform.Find("InteractionSpot");
             pointClick.PlayArcadeAtSpot(interaction != null ? interaction : chosen.transform);
+        }
+        else
+        {
+            Debug.LogWarning("[GolemCharacterController] No arcades found with tag 'Arcade'.");
         }
     }
 
@@ -158,11 +166,12 @@ public class GolemCharacterController : MonoBehaviour
     private Transform FindTransformByNameContains(string namePart)
     {
         if (string.IsNullOrEmpty(namePart)) return null;
+        var all = GameObject.FindObjectsOfType<Transform>();
         namePart = namePart.ToLower();
-        var all = FindObjectsOfType<Transform>();
         foreach (var t in all)
         {
-            if (t != null && t.name != null && t.name.ToLower().Contains(namePart))
+            if (t == null || t.gameObject == null) continue;
+            if (t.name != null && t.name.ToLower().Contains(namePart))
                 return t;
         }
         return null;

@@ -37,6 +37,8 @@ public class GolemEmoteHandler : MonoBehaviour
         if (msg.TryGetPayload<VoiceEmotePayload>(out var payload))
         {
             Debug.Log($"[GolemEmoteHandler] Voice emote received: {payload.Type}");
+            // Voice audio playback is handled by existing EmotePlayer via CFConnector.OnVoiceEmote
+            // This handler can be extended for additional voice-related logic (lip sync, etc.)
         }
     }
 
@@ -57,6 +59,7 @@ public class GolemEmoteHandler : MonoBehaviour
         if (msg.TryGetPayload<FacialExpressionPayload>(out var payload))
         {
             Debug.Log($"[GolemEmoteHandler] Facial expression: {payload.Expression} (intensity: {payload.Intensity})");
+            // Facial expression logic - can be extended to drive blend shapes
         }
     }
 }
