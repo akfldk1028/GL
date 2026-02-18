@@ -17,6 +17,7 @@ namespace Golem.Character.FSM
         private readonly MonoBehaviour _coroutineRunner;
         private readonly List<IDisposable> _subscriptions = new();
         private Coroutine _moveCompletionCoroutine;
+        private Coroutine _delayedMoveCoroutine;
 
         public CharacterCommandRouter(
             CharacterBehaviorFSM fsm,
@@ -123,7 +124,8 @@ namespace Golem.Character.FSM
                     float pause = thinkTime.GetPauseDuration(CharacterStateId.Idle, CharacterStateId.Walking);
                     if (pause > 0f)
                     {
-                        _coroutineRunner.StartCoroutine(DelayedMove(dest, pause, msg.Id));
+                        CancelDelayedMove();
+                        _delayedMoveCoroutine = _coroutineRunner.StartCoroutine(DelayedMove(dest, pause, msg.Id));
                         return;
                     }
                 }
@@ -137,13 +139,24 @@ namespace Golem.Character.FSM
         private IEnumerator DelayedMove(Vector3 dest, float delay, ActionId source)
         {
             yield return new WaitForSeconds(delay);
+            _delayedMoveCoroutine = null;
             _pointClick.MoveToPoint(dest);
             _fsm.ForceTransition(CharacterStateId.Walking);
             StartMoveWatch(source, "moveToLocation");
         }
 
+        private void CancelDelayedMove()
+        {
+            if (_delayedMoveCoroutine != null)
+            {
+                _coroutineRunner.StopCoroutine(_delayedMoveCoroutine);
+                _delayedMoveCoroutine = null;
+            }
+        }
+
         private void OnStop(ActionMessage msg)
         {
+            CancelDelayedMove();
             if (_moveCompletionCoroutine != null)
             {
                 _coroutineRunner.StopCoroutine(_moveCompletionCoroutine);
@@ -193,11 +206,16 @@ namespace Golem.Character.FSM
         private void OnStandUp(ActionMessage msg)
         {
             if (_fsm.IsInState(CharacterStateId.Sitting))
+            {
+                // StandTransition is async (animation) — CompletionTracker publishes when done
                 _fsm.ForceTransition(CharacterStateId.StandTransition);
+            }
             else if (_fsm.IsInAnyState(CharacterStateId.Looking, CharacterStateId.Leaning,
                 CharacterStateId.PlayingArcade, CharacterStateId.PlayingClaw))
+            {
                 _fsm.ForceTransition(CharacterStateId.Idle);
-            PublishCompleted(ActionId.Character_StandUp, "standUp");
+                PublishCompleted(ActionId.Character_StandUp, "standUp");
+            }
         }
 
         private void OnIdle(ActionMessage msg)

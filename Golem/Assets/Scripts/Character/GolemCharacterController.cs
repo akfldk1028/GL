@@ -47,6 +47,10 @@ public class GolemCharacterController : MonoBehaviour
             animator = GetComponent<Animator>() ?? GetComponentInChildren<Animator>();
         _navAgent = GetComponent<NavMeshAgent>();
 
+        // Disable legacy mouse+boolean logic in PointClickController
+        if (pointClick != null)
+            pointClick.fsmActive = true;
+
         // FSM
         _stateContext = new CharacterStateContext
         {

@@ -23,6 +23,10 @@ namespace Golem.Character.FSM.States
 
             if (ctx.PointClick.HasArrived)
             {
+                // Disable NavAgent before snap to prevent repositioning
+                if (ctx.NavAgent != null)
+                    ctx.NavAgent.enabled = false;
+
                 // Snap to chair interaction spot
                 if (ctx.InteractionSpot != null)
                     ctx.PointClick.SnapToTransform(ctx.InteractionSpot);

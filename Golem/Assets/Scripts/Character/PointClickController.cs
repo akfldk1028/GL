@@ -36,6 +36,9 @@ public class PointClickController : MonoBehaviour
 
     private NavMeshAgent agent;
 
+    /// <summary>When true, legacy mouse click + boolean logic is skipped (FSM takes over).</summary>
+    [HideInInspector] public bool fsmActive = false;
+
     public float rotationSpeed = 180f;
 
     void Awake()
@@ -58,6 +61,10 @@ public class PointClickController : MonoBehaviour
     {
         if (!enabled) return;
         if (cam == null) return;
+
+        // FSM active — skip legacy mouse click + boolean interaction logic.
+        // Only the Speed animator feed below still runs.
+        if (fsmActive) goto AnimatorFeed;
 
         if (Input.GetMouseButtonDown(0))
         {
@@ -183,6 +190,7 @@ public class PointClickController : MonoBehaviour
         }
 
         // update animator speed parameter based on agent movement intent
+        AnimatorFeed:
         if (animator != null && agent != null)
         {
             // if agent has arrived or is stopping, treat as zero
@@ -448,10 +456,10 @@ public class PointClickController : MonoBehaviour
         transform.SetPositionAndRotation(target.position, target.rotation);
     }
 
-    /// <summary>True when NavMeshAgent has reached its destination.</summary>
+    /// <summary>True when NavMeshAgent has a path and reached its destination.</summary>
     public bool HasArrived =>
         agent != null && agent.enabled && !agent.pathPending &&
-        agent.remainingDistance <= agent.stoppingDistance + 0.1f;
+        agent.hasPath && agent.remainingDistance <= agent.stoppingDistance + 0.1f;
 
     /// <summary>True when NavMeshAgent has a path and is moving.</summary>
     public bool IsMoving =>

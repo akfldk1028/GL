@@ -91,7 +91,11 @@ namespace Golem.Character.Autonomous
 
         private AutonomousAction PickRandomAction()
         {
-            float roll = Random.value;
+            float total = _config.wanderWeight + _config.lookAroundWeight
+                + _config.sitWeight + _config.gestureWeight + _config.playGameWeight;
+            if (total <= 0f) return CreateWanderAction();
+
+            float roll = Random.value * total;
             float cumulative = 0f;
 
             cumulative += _config.wanderWeight;

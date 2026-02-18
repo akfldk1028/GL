@@ -12,19 +12,10 @@ namespace Golem.Character.Modules.Impl
         public override string ModuleId => "breathing";
 
         private float _phase;
-        private Quaternion _originalSpineRotation;
-        private bool _hasOriginal;
 
         public override void OnLateUpdate(float deltaTime)
         {
             if (Context?.SpineBone == null || Context?.Config == null) return;
-
-            // Cache original rotation on first frame
-            if (!_hasOriginal)
-            {
-                _originalSpineRotation = Context.SpineBone.localRotation;
-                _hasOriginal = true;
-            }
 
             // Breathing rate — faster when moving
             float rate = Context.Config.breathingRate;
@@ -39,9 +30,8 @@ namespace Golem.Character.Modules.Impl
 
             float breathOffset = Mathf.Sin(_phase) * Context.Config.breathingAmplitude;
 
-            // Apply subtle rotation around X axis (forward lean/back)
-            Context.SpineBone.localRotation = _originalSpineRotation
-                * Quaternion.Euler(breathOffset, 0f, 0f);
+            // Multiply onto post-animation rotation (Animator writes before LateUpdate)
+            Context.SpineBone.localRotation *= Quaternion.Euler(breathOffset, 0f, 0f);
         }
     }
 }
