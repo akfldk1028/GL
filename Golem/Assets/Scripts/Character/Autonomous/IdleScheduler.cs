@@ -17,8 +17,13 @@ namespace Golem.Character.Autonomous
         private Coroutine _autonomousCoroutine;
         private bool _isRunning;
         private bool _isPerformingAutonomousAction;
+        private bool _publishingAutonomous;
 
         public bool IsPerformingAutonomousAction => _isPerformingAutonomousAction;
+
+        /// <summary>True during the synchronous PublishAction call from an autonomous action.
+        /// CharacterCommandRouter checks this to avoid cancelling the action we just started.</summary>
+        public bool IsPublishingAutonomous => _publishingAutonomous;
 
         public IdleScheduler(
             CharacterBehaviorFSM fsm,
@@ -176,7 +181,9 @@ namespace Golem.Character.Autonomous
             _isPerformingAutonomousAction = true;
             Debug.Log($"[IdleScheduler] Starting: {action.Description}");
 
+            _publishingAutonomous = true;
             Managers.PublishAction(action.ActionId, action.Payload);
+            _publishingAutonomous = false;
 
             float elapsed = 0f;
             while (elapsed < action.ExpectedDuration && _isPerformingAutonomousAction)

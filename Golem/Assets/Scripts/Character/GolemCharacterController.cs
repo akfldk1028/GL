@@ -91,6 +91,7 @@ public class GolemCharacterController : MonoBehaviour
         if (idleSchedulerConfig != null)
         {
             _idleScheduler = new Golem.Character.Autonomous.IdleScheduler(_fsm, idleSchedulerConfig, this, transform);
+            _router.SetIdleScheduler(_idleScheduler);
             _idleScheduler.Start();
         }
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Golem.Character.Autonomous;
 using Golem.Character.Modules;
 using Golem.Character.Modules.Impl;
 using Golem.Infrastructure.Messages;
@@ -16,6 +17,7 @@ namespace Golem.Character.FSM
         private readonly BehaviorModuleRegistry _modules;
         private readonly MonoBehaviour _coroutineRunner;
         private readonly List<IDisposable> _subscriptions = new();
+        private IdleScheduler _idleScheduler;
         private Coroutine _moveCompletionCoroutine;
         private Coroutine _delayedMoveCoroutine;
 
@@ -47,11 +49,20 @@ namespace Golem.Character.FSM
             _subscriptions.Add(Managers.Subscribe(ActionId.Character_PlayClaw, OnPlayClaw));
         }
 
+        public void SetIdleScheduler(IdleScheduler scheduler) => _idleScheduler = scheduler;
+
         public void Dispose()
         {
             foreach (var sub in _subscriptions)
                 sub?.Dispose();
             _subscriptions.Clear();
+        }
+
+        /// <summary>Cancel any running autonomous action if this command is NOT from IdleScheduler itself.</summary>
+        private void InterruptAutonomous()
+        {
+            if (_idleScheduler != null && !_idleScheduler.IsPublishingAutonomous)
+                _idleScheduler.CancelCurrentAction();
         }
 
         private void PublishCompleted(ActionId source, string name)
@@ -108,6 +119,7 @@ namespace Golem.Character.FSM
 
         private void OnMoveToLocation(ActionMessage msg)
         {
+            InterruptAutonomous();
             if (_pointClick == null) return;
             if (msg.TryGetPayload<MoveToLocationPayload>(out var p))
             {
@@ -156,6 +168,7 @@ namespace Golem.Character.FSM
 
         private void OnStop(ActionMessage msg)
         {
+            InterruptAutonomous();
             CancelDelayedMove();
             if (_moveCompletionCoroutine != null)
             {
@@ -169,6 +182,7 @@ namespace Golem.Character.FSM
 
         private void OnTurnTo(ActionMessage msg)
         {
+            InterruptAutonomous();
             if (msg.TryGetPayload<GazePayload>(out var p))
             {
                 Vector3 target = p.Position;
@@ -190,6 +204,7 @@ namespace Golem.Character.FSM
 
         private void OnSitAtChair(ActionMessage msg)
         {
+            InterruptAutonomous();
             if (_pointClick == null) return;
             if (msg.TryGetPayload<SitAtChairPayload>(out var p))
             {
@@ -205,6 +220,7 @@ namespace Golem.Character.FSM
 
         private void OnStandUp(ActionMessage msg)
         {
+            InterruptAutonomous();
             if (_fsm.IsInState(CharacterStateId.Sitting))
             {
                 // StandTransition is async (animation) — CompletionTracker publishes when done
@@ -220,6 +236,7 @@ namespace Golem.Character.FSM
 
         private void OnIdle(ActionMessage msg)
         {
+            InterruptAutonomous();
             if (msg.TryGetPayload<IdlePayload>(out var p))
             {
                 string type = p.IdleType ?? "standing";
@@ -237,6 +254,7 @@ namespace Golem.Character.FSM
 
         private void OnLean(ActionMessage msg)
         {
+            InterruptAutonomous();
             var chair = InteractionSpotFinder.FindSlotMachineChair();
             if (chair != null)
             {
@@ -248,6 +266,7 @@ namespace Golem.Character.FSM
 
         private void OnExamineMenu(ActionMessage msg)
         {
+            InterruptAutonomous();
             var ad = InteractionSpotFinder.FindAdDisplay();
             if (ad != null)
             {
@@ -259,6 +278,7 @@ namespace Golem.Character.FSM
 
         private void OnLookAt(ActionMessage msg)
         {
+            InterruptAutonomous();
             if (msg.TryGetPayload<GazePayload>(out var p))
             {
                 Vector3 target = p.Position;
@@ -275,6 +295,7 @@ namespace Golem.Character.FSM
 
         private void OnPlayArcade(ActionMessage msg)
         {
+            InterruptAutonomous();
             var arcade = InteractionSpotFinder.FindArcade();
             if (arcade != null)
             {
@@ -286,6 +307,7 @@ namespace Golem.Character.FSM
 
         private void OnPlayClaw(ActionMessage msg)
         {
+            InterruptAutonomous();
             var claw = InteractionSpotFinder.FindClawMachine();
             if (claw != null)
             {
