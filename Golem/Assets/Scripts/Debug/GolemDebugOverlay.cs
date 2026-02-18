@@ -86,6 +86,15 @@ public class GolemDebugOverlay : MonoBehaviour
         // StateMachine State
         GUILayout.Label($"State: {Managers.CurrentStateId}");
 
+        // Character FSM State
+        var gcc = FindObjectOfType<GolemCharacterController>();
+        if (gcc != null && gcc.FSM != null)
+        {
+            GUI.color = Color.cyan;
+            GUILayout.Label($"Character FSM: {gcc.FSM.CurrentStateId}");
+            GUI.color = Color.white;
+        }
+
         // Message Rate
         GUILayout.Label($"Messages/sec: {_messagesPerSecond:F0}");
 

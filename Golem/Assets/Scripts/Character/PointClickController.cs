@@ -424,4 +424,37 @@ public class PointClickController : MonoBehaviour
         goingToPlayClaw = false;
         goingToPlayArcade = false;
     }
+
+    // ── Thin API for CharacterCommandRouter ──────────────────
+
+    /// <summary>Thin wrapper over MoveCharacterToPoint for Router use.</summary>
+    public void MoveToPoint(Vector3 point)
+    {
+        goingToLook = goingToSit = goingToLean = goingToPlayClaw = goingToPlayArcade = false;
+        MoveCharacterToPoint(point);
+    }
+
+    /// <summary>Stops NavMeshAgent movement immediately.</summary>
+    public void StopMovement()
+    {
+        if (agent != null && agent.enabled)
+            agent.ResetPath();
+    }
+
+    /// <summary>Snaps character position and rotation to a transform.</summary>
+    public void SnapToTransform(Transform target)
+    {
+        if (target == null) return;
+        transform.SetPositionAndRotation(target.position, target.rotation);
+    }
+
+    /// <summary>True when NavMeshAgent has reached its destination.</summary>
+    public bool HasArrived =>
+        agent != null && agent.enabled && !agent.pathPending &&
+        agent.remainingDistance <= agent.stoppingDistance + 0.1f;
+
+    /// <summary>True when NavMeshAgent has a path and is moving.</summary>
+    public bool IsMoving =>
+        agent != null && agent.enabled && agent.hasPath &&
+        agent.remainingDistance > agent.stoppingDistance + 0.1f;
 }

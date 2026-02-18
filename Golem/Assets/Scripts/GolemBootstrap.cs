@@ -48,13 +48,16 @@ public class GolemBootstrap : MonoBehaviour
         CreateActionGate();
         Debug.Log("[GolemBootstrap] Step 5: GolemActionGate created.");
 
-        // Step 6: Register initial states
-        RegisterStates();
-        Debug.Log("[GolemBootstrap] Step 6: States registered.");
+        // Step 6: Create Behavior Debug UI
+        CreateBehaviorDebugUI();
 
-        // Step 7: Set initial state
+        // Step 7: Register initial states
+        RegisterStates();
+        Debug.Log("[GolemBootstrap] Step 7: States registered.");
+
+        // Step 8: Set initial state
         Managers.SetState(StateId.Boot);
-        Debug.Log("[GolemBootstrap] Step 7: Initial state set to Boot.");
+        Debug.Log("[GolemBootstrap] Step 8: Initial state set to Boot.");
 
         Debug.Log("[GolemBootstrap] === Golem AI Agent System Ready ===");
     }
@@ -96,6 +99,18 @@ public class GolemBootstrap : MonoBehaviour
         var go = new GameObject("@GolemActionGate");
         DontDestroyOnLoad(go);
         go.AddComponent<GolemActionGate>();
+    }
+
+    private void CreateBehaviorDebugUI()
+    {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        var go = new GameObject("@CharacterBehaviorDebugUI");
+        DontDestroyOnLoad(go);
+        go.AddComponent<CharacterBehaviorDebugUI>();
+        Debug.Log("[GolemBootstrap] Step 6: Behavior debug UI created (F11 to toggle).");
+#else
+        Debug.Log("[GolemBootstrap] Step 6: Behavior debug UI skipped (release build).");
+#endif
     }
 
     private void RegisterStates()
