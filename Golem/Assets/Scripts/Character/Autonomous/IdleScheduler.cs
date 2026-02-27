@@ -83,7 +83,7 @@ namespace Golem.Character.Autonomous
             _memoryStore = new MemoryStore(memoryConfig, charName);
             _memoryStore.Load();
 
-            _outcomeTracker = new ActionOutcomeTracker(_memoryStore, memoryConfig);
+            _outcomeTracker = new ActionOutcomeTracker(_memoryStore);
             _outcomeTracker.OnOutcomeRecorded += OnOutcomeRecorded;
 
             _reflectionEngine = new ReflectionEngine(memoryConfig, _memoryStore);
@@ -257,7 +257,7 @@ namespace Golem.Character.Autonomous
             // Track for reflection engine
             _reflectionEngine?.TrackAction(_memoryStore?.Episodic.Episodes.Count > 0
                 ? _memoryStore.Episodic.Episodes[_memoryStore.Episodic.Episodes.Count - 1].importance
-                : 0.2f);
+                : _memoryConfig.defaultBaseImportance);
 
             // ReAct: retry once on failure
             if (!succeeded && _memoryConfig != null && _memoryConfig.enableFailureRetry && !_retryPending)
@@ -577,13 +577,17 @@ namespace Golem.Character.Autonomous
             else
                 Managers.PublishAction(action.ActionId);
 
+            // Capture tracking state BEFORE yield — true only if BeginTracking was called.
+            bool wasTracking = _outcomeTracker != null && _outcomeTracker.HasPending;
+
             // Brief yield to let ActionFailed fire immediately for "not found" cases
             _publishingAutonomous = false;
             yield return null;
 
-            // If ActionFailed already recorded the outcome during PublishAction, abort the timer.
-            // Check HasPending: false means RecordOutcome already fired (immediate failure path).
-            if (_outcomeTracker != null && !_outcomeTracker.HasPending)
+            // If tracking was started and outcome already recorded (immediate failure),
+            // abort the timer. Only check when BeginTracking was actually called —
+            // otherwise HasPending is false by default and would falsely kill the action.
+            if (wasTracking && !_outcomeTracker.HasPending)
             {
                 _isPerformingAutonomousAction = false;
                 _autonomousCoroutine = null;

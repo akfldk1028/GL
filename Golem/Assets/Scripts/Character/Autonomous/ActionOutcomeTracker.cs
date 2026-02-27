@@ -7,7 +7,6 @@ namespace Golem.Character.Autonomous
     public class ActionOutcomeTracker : IDisposable
     {
         private readonly MemoryStore _memoryStore;
-        private readonly MemoryConfigSO _config;
         private IDisposable _completedSub;
         private IDisposable _failedSub;
 
@@ -27,10 +26,9 @@ namespace Golem.Character.Autonomous
 
         public event Action<bool> OnOutcomeRecorded;
 
-        public ActionOutcomeTracker(MemoryStore memoryStore, MemoryConfigSO config)
+        public ActionOutcomeTracker(MemoryStore memoryStore)
         {
             _memoryStore = memoryStore;
-            _config = config;
 
             _completedSub = Managers.Subscribe(ActionId.Agent_ActionCompleted, OnActionCompleted);
             _failedSub = Managers.Subscribe(ActionId.Agent_ActionFailed, OnActionFailed);
