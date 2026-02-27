@@ -4,14 +4,42 @@ Unity 6000.3.3f1 기반 가상 AI 에이전트 캐릭터 시스템.
 AI 서버(WebSocket)가 보내는 명령으로 3D 캐릭터가 자연스럽게 행동하고,
 명령이 없을 때는 자율적으로 돌아다니며 생활하는 프레임워크.
 
+## Core Logic — 어떻게 작동하는가
+
+**현재 (Phase 1-6 완료)**:
+캐릭터는 10-state FSM이 모든 행동을 제어한다. AI 서버가 WebSocket으로 `"sit"` 같은 명령을 보내면,
+`ActionTypeRegistry`가 ActionId로 매핑 → `ActionMessageBus`가 Pub/Sub으로 배포 → `CharacterCommandRouter`가 FSM 상태 전환 → Animator가 애니메이션 재생. AI 서버 명령이 없으면 `IdleScheduler`가 **가중 랜덤**으로 행동을 선택한다 (산책 30%, 두리번 20%, 앉기 15%, ...).
+
+**목표 (Phase 9-10 계획)**:
+가중 랜덤을 **LLM 판단**으로 교체. 캐릭터의 FSM 상태, 위치, 주변 오브젝트, 최근 행동 5개를 LLM에 보내고 "다음에 뭘 할지" JSON으로 받는다. Voyager 패턴의 스킬 라이브러리로 성공한 행동을 캐시하고, SIMA 2 패턴의 confidence 점수로 불확실할 때 폴백한다.
+
+## Research Basis — 참조 논문
+
+자율 판단 시스템 설계의 학술적 근거. 자세한 분석: [`docs/golem-specs/gl-2025-agent-research.md`](../docs/golem-specs/gl-2025-agent-research.md)
+
+| # | Paper | Year | 가져온 것 |
+|---|-------|------|-----------|
+| 1 | [Park et al. — *Generative Agents*](https://arxiv.org/abs/2304.03442) | 2023 | **기반 아키텍처**: Memory Stream, Reflection, Persona 기반 행동 |
+| 2 | [Wang et al. — *Voyager*](https://arxiv.org/abs/2305.16291) | 2023 | **Skill Library**: 성공한 행동 시퀀스 캐시 + 자기검증 |
+| 3 | [Altera — *Project Sid*](https://arxiv.org/abs/2411.00114) | 2024 | **PIANO 아키텍처**: 1000 에이전트 규모 검증, LLM 판단 스케일 확인 |
+| 4 | [DeepMind — *SIMA 2*](https://arxiv.org/abs/2512.04797) | 2025 | **Confidence 점수 + 자기개선 루프**: Evaluate→Adapt 사이클 |
+| 5 | [Xi et al. — *LLM Agent Survey*](https://arxiv.org/abs/2309.07864) | 2025 | **4종 메모리 분류**: Working, Episodic, Semantic, Procedural |
+| 6 | [Wang et al. — *Autonomous Agent Survey*](https://arxiv.org/abs/2308.11432) | 2024 | **추론 패턴**: CoT, ReAct, Reflexion |
+| 7 | [Sumers et al. — *CoALA*](https://arxiv.org/abs/2309.02427) | 2024 | **인지 아키텍처 프레임워크**: 모듈형 메모리 + 액션 공간 |
+| 8 | Brohan et al. — *RT-2* | 2023 | VLA 방식 **기각 근거** (연속 모터 제어 ≠ 이산 행동 선택) |
+
 ## Architecture Overview
 
 ```
+Layer 5 ─ Decision Brain (PLANNED) ── LLM 기반 자율 판단 (weighted random 대체)
+                                        AIDecisionConnector → Memory + Skills
+                                        자세한 스펙: docs/golem-specs/gl-autonomous-decision-system.md
+
 Layer 4 ─ AI Server Commands ──── CFConnector → AINetworkManager → ActionBus
                                     → CharacterCommandRouter (13 commands 구독)
 
 Layer 3 ─ Autonomous Behavior ─── IdleScheduler (AI 명령 없을 때 자율 행동)
-                                    → 가중 랜덤: 산책, 구경, 앉기, 제스처
+                                    → 현재: 가중 랜덤 │ 목표: LLM 판단 (Layer 5)
 
 Layer 2 ─ Behavior Modules ────── 5개 모듈 (항상 작동, FSM 독립)
                                     호흡 │ 시선 │ ThinkTime │ Idle변형 │ 가감속
@@ -33,7 +61,7 @@ CFConnector.ReceiveLoop()
     │ HandleMessage() → "character_action" 식별
     ▼
 AINetworkManager.HandleCharacterAction()
-    │ ActionTypeRegistry.MapToActionId("move" → ActionId.Agent_Move)
+    │ ActionTypeRegistry.MapToActionId("move" → ActionId.Character_MoveToLocation)
     ▼
 Managers.PublishAction(actionId, payload)        ← Pub/Sub 중심점
     │
@@ -146,14 +174,14 @@ Assets/Scripts/                              ~70 files
 │
 ├── Infrastructure/
 │   ├── Messages/
-│   │   ├── ActionId.cs                      37 action IDs (10 categories)
+│   │   ├── ActionId.cs                      42 action IDs (10 categories)
 │   │   ├── ActionMessage.cs                 readonly struct + TryGetPayload<T>
 │   │   ├── ActionMessageBus.cs              Filtered pub/sub
 │   │   ├── ActionPayloads.cs                17 payload classes
-│   │   ├── ActionDispatcher.cs              StateMachine 연동 디스패처
 │   │   ├── ActionTypeRegistry.cs            string→ActionId 매핑
 │   │   ├── CompositeActionExecutor.cs       BML 시퀀스 실행
 │   │   ├── BufferedMessageChannel.cs        버퍼링 채널
+│   │   ├── IMessageChannel.cs               메시지 채널 인터페이스
 │   │   ├── MessageChannel.cs                IMessageChannel 구현
 │   │   ├── DisposableSubscription.cs        IDisposable 구독 래퍼
 │   │   └── ParamHelper.cs                   JSON 파라미터 추출
@@ -309,19 +337,19 @@ AI 서버 명령 없이 Idle 상태가 N초 지속되면 자율 행동 시작.
 **우선순위**: AI 서버 명령 수신 시 `CancelCurrentAction()` 즉시 중단.
 자율 행동은 기존 ActionBus 파이프라인으로 발행되므로 CharacterCommandRouter가 동일하게 처리.
 
-## ActionId Categories (37 IDs)
+## ActionId Categories (42 IDs)
 
 ```csharp
-System    = 100  // Update, LateUpdate, FixedUpdate
-Agent     = 200  // Connected, Disconnected, StateChanged, Error, ...
-Expression = 300 // FacialExpression, VoiceEmote, AnimatedEmote
-Locomotion = 400 // MoveToLocation, WalkTo, RunTo, Stop, TurnTo
-Posture   = 450  // Idle, SitAtChair, StandUp, Lean
-Interaction = 500 // ExamineMenu, LookAt, PlayArcade, PlayClaw
-Social    = 600  // Wave, Nod, Greet, Farewell
-Camera    = 700  // ChangeAngle
-Composite = 800  // ActionSequence
-Feedback  = 900  // ActionCompleted
+System     = 100  // Update, LateUpdate, FixedUpdate                     (3)
+Agent      = 200  // Connected, Disconnected, StateChanged, Error, ...   (9)
+Expression = 300  // VoiceEmote, TTS, AnimatedEmote, Facial, Gesture, Gaze  (8)
+Locomotion = 400  // MoveToLocation, WalkTo, RunTo, Stop, TurnTo        (5)
+Posture    = 450  // SitAtChair, StandUp, Idle, Lean                    (4)
+Interaction = 500 // ExamineMenu, LookAt, PlayArcade, PlayClaw          (4)
+Social     = 600  // Greet, Wave, Nod, HeadShake, Point                 (5)
+Camera     = 700  // ChangeAngle                                        (1)
+Composite  = 800  // MultiAction, Sequence                              (2)
+Feedback   = 900  // ActionResult                                       (1)
 ```
 
 ## PointClickController Dual-Mode
@@ -418,6 +446,8 @@ Unity Profiler 마커:
 | 6. Debug & Polish | **Done** | F11/F12 overlays, ProfilerMarker |
 | 7. Multi-Channel Behavior | Not started | 상체/하체 분리, 걸으면서 제스처 |
 | 8. Animation Rigging | Not started | IK 기반 시선/호흡 (optional) |
+| 9. LLM Decision Brain (Tier 1) | **Planned** | IdleScheduler → LLM 쿼리, AIDecisionConnector, CoT 프롬프트 |
+| 10. Memory + Skills (Tier 2) | **Planned** | 4종 메모리, 스킬 라이브러리, ReAct 평가 루프 |
 
 ## Dependencies
 
@@ -426,3 +456,37 @@ Unity Profiler 마커:
 - Newtonsoft.Json (JSON.NET, Unity 내장)
 - System.Net.WebSockets (.NET 내장)
 - 외부 패키지 불필요
+
+## Next Steps
+
+### Tier 1 — LLM Decision Brain (Phase 9)
+
+1. `AIDecisionConnector.cs` 생성 — HTTP POST to LLM endpoint (Ollama / OpenAI compatible)
+2. `IdleScheduler.PickRandomAction()` → `AIDecisionConnector.QueryAsync()` 교체
+3. CoT 프롬프트 템플릿 구현 (confidence 점수 + reasoning 필드)
+4. 폴백 전략: HTTP 실패 → weighted random, confidence < 0.3 → random
+
+### Tier 2 — Memory + Skills (Phase 10)
+
+1. `MemoryStore.cs` 생성 — EpisodicMemory (timestamped action log with success/failure)
+2. `SkillLibrary.cs` 생성 — Voyager 패턴 (성공한 액션 시퀀스 캐시)
+3. 프롬프트에 top-K 메모리 + 매칭 스킬 추가
+4. ReAct 평가 루프: ActionCompleted/Failed → MemoryStore 기록
+
+### Tier 3 — Self-Improvement (Future)
+
+1. 자기 평가 루프 (SIMA 2 패턴) — N번 결정마다 LLM이 자기 판단 리뷰
+2. 로컬 모델 최적화 (Ollama, Qwen2.5-3B / Llama 3.2 3B)
+
+자세한 스펙: [`docs/golem-specs/gl-autonomous-decision-system.md`](../docs/golem-specs/gl-autonomous-decision-system.md)
+
+## Documentation
+
+| Document | Path | Purpose |
+|----------|------|---------|
+| **이 파일** | `Golem/README.md` | 프로젝트 개요, 구조, 설정 가이드 |
+| 자율 판단 시스템 스펙 | `docs/golem-specs/gl-autonomous-decision-system.md` | Decision Brain 설계 — Tier 1/2/3 구현 계획 |
+| 2025 에이전트 연구 | `docs/golem-specs/gl-2025-agent-research.md` | SIMA 2, Voyager, Project Sid 등 연구 레퍼런스 |
+| 자연스러운 행동 연구 | `docs/research/natural-ai-character-behavior.md` | 모션, idle, 전환 등 행동 자연스러움 기법 |
+| Phase 스펙 (1-8) | `docs/golem-specs/phase{1-8}.txt` | 각 Phase 구현 상세 스펙 |
+
