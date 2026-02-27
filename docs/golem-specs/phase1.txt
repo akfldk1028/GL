@@ -1,0 +1,259 @@
+Phase 1: Infrastructure Messaging System
+
+Create the core messaging infrastructure for Golem by porting MB_N2N's verified pub/sub architecture.
+All new files go under Assets/Scripts/Infrastructure/Messages/ with namespace Golem.Infrastructure.Messages.
+
+CRITICAL RULES:
+- DO NOT modify any existing Golem scripts (CFConnector.cs, CelesteActionController.cs, PointClickController.cs, EmotePlayer.cs, etc.)
+- Existing Golem scripts have NO namespaces - do NOT add namespaces to them
+- Only new files get the Golem.Infrastructure.Messages namespace
+- Use Unity 6 compatible C# (no file-scoped namespaces, use block-scoped)
+
+=== FILE 1: Assets/Scripts/Infrastructure/Messages/IMessageChannel.cs ===
+
+Port from MB_N2N (reference: C:/DK/GL/MB_N2N/Assets/@Scripts/Infrastructure/Messages/IMessageChannel.cs)
+
+Create these interfaces:
+- IPublisher<T> : IDisposable with void Publish(T message)
+- ISubscriber<T> : IDisposable with IDisposable Subscribe(Action<T> handler)
+- IMessageChannel<T> : IPublisher<T>, ISubscriber<T>
+- IBufferedMessageChannel<T> : IMessageChannel<T> with bool HasBufferedMessage, T BufferedMessage
+
+All in namespace Golem.Infrastructure.Messages.
+
+=== FILE 2: Assets/Scripts/Infrastructure/Messages/MessageChannel.cs ===
+
+Port from MB_N2N (reference: C:/DK/GL/MB_N2N/Assets/@Scripts/Infrastructure/Messages/MessageChannel.cs)
+
+Generic pub/sub channel with:
+- HashSet<Action<T>> m_MessageHandlers for active subscribers
+- List<Action<T>> m_PendingHandlers for deferred additions during publish
+- bool m_IsPublishing flag to prevent ConcurrentModification
+- Publish(T): sets m_IsPublishing, iterates handlers, then adds pending handlers
+- Subscribe(Action<T>): if publishing, add to pending; else add to handlers. Returns DisposableSubscription<T>
+- Dispose(): clear both collections, set m_IsDisposed flag
+- Unsubscribe(Action<T>): internal method to remove from handlers
+
+=== FILE 3: Assets/Scripts/Infrastructure/Messages/BufferedMessageChannel.cs ===
+
+Implement IBufferedMessageChannel<T>:
+- Wraps a MessageChannel<T> internally
+- Stores last published message in a field
+- HasBufferedMessage property (bool)
+- BufferedMessage property (returns last message)
+- Publish: stores message, then delegates to inner channel
+- Subscribe: if buffered, immediately invoke handler with buffered message, then subscribe to inner
+- Dispose: dispose inner channel
+
+=== FILE 4: Assets/Scripts/Infrastructure/Messages/DisposableSubscription.cs ===
+
+RAII cleanup pattern:
+- DisposableSubscription<T> : IDisposable
+- Constructor takes IMessageChannel<T> channel and Action<T> handler
+- Dispose(): calls channel's internal Unsubscribe method, sets disposed flag
+- Prevent double-dispose
+
+=== FILE 5: Assets/Scripts/Infrastructure/Messages/ActionId.cs ===
+
+Golem-specific enum (NOT from MB_N2N - customized for Golem):
+```csharp
+namespace Golem.Infrastructure.Messages
+{
+    public enum ActionId
+    {
+        None = 0,
+
+        // System lifecycle (from Managers Update/LateUpdate/FixedUpdate)
+        System_Update = 100,
+        System_LateUpdate = 101,
+        System_FixedUpdate = 102,
+
+        // Agent connection events (from CFConnector)
+        Agent_Connected = 200,
+        Agent_Disconnected = 201,
+        Agent_StateChanged = 202,
+        Agent_Error = 203,
+
+        // Emote events (from CFConnector)
+        Agent_VoiceEmote = 300,
+        Agent_AnimatedEmote = 301,
+        Agent_FacialExpression = 302,
+
+        // Character actions (from CFConnector.OnCharacterAction)
+        Character_MoveToLocation = 400,
+        Character_SitAtChair = 401,
+        Character_StandUp = 402,
+        Character_ExamineMenu = 403,
+        Character_PlayArcade = 404,
+        Character_ChangeCameraAngle = 405,
+        Character_Idle = 406,
+
+        // Camera
+        Camera_ChangeState = 500,
+    }
+}
+```
+
+=== FILE 6: Assets/Scripts/Infrastructure/Messages/ActionMessage.cs ===
+
+Port from MB_N2N IAction.cs (reference: C:/DK/GL/MB_N2N/Assets/@Scripts/Infrastructure/Messages/IAction.cs)
+
+```csharp
+namespace Golem.Infrastructure.Messages
+{
+    public interface IActionPayload { }
+
+    public readonly struct ActionMessage
+    {
+        public ActionId Id { get; }
+        public IActionPayload Payload { get; }
+
+        private ActionMessage(ActionId id, IActionPayload payload = null)
+        {
+            Id = id;
+            Payload = payload;
+        }
+
+        public static ActionMessage From(ActionId id) => new ActionMessage(id);
+        public static ActionMessage From(ActionId id, IActionPayload payload) => new ActionMessage(id, payload);
+
+        public bool TryGetPayload<T>(out T payload) where T : class, IActionPayload
+        {
+            payload = Payload as T;
+            return payload != null;
+        }
+    }
+
+    public interface IAction
+    {
+        ActionId Id { get; }
+        void Execute(ActionMessage message);
+    }
+}
+```
+
+=== FILE 7: Assets/Scripts/Infrastructure/Messages/ActionPayloads.cs ===
+
+Golem-specific payloads matching CFConnector data types:
+
+```csharp
+using System.Collections.Generic;
+
+namespace Golem.Infrastructure.Messages
+{
+    // For Character_MoveToLocation
+    public class MoveToLocationPayload : IActionPayload
+    {
+        public string Location { get; set; }
+        public UnityEngine.Vector3 Destination { get; set; }
+    }
+
+    // For Character_SitAtChair
+    public class SitAtChairPayload : IActionPayload
+    {
+        public int ChairNumber { get; set; }
+    }
+
+    // For Character_ExamineMenu
+    public class ExamineMenuPayload : IActionPayload
+    {
+        public string Focus { get; set; }
+    }
+
+    // For Character_PlayArcade
+    public class PlayArcadePayload : IActionPayload
+    {
+        public string Game { get; set; }
+    }
+
+    // For Character_ChangeCameraAngle
+    public class ChangeCameraAnglePayload : IActionPayload
+    {
+        public string Angle { get; set; }
+        public string Transition { get; set; }
+    }
+
+    // For Character_Idle
+    public class IdlePayload : IActionPayload
+    {
+        public string IdleType { get; set; }
+    }
+
+    // For Agent_VoiceEmote (wraps CFConnector.VoiceEmoteData)
+    public class VoiceEmotePayload : IActionPayload
+    {
+        public string Type { get; set; }
+        public string AudioBase64 { get; set; }
+    }
+
+    // For Agent_AnimatedEmote (wraps CFConnector.AnimatedEmoteData)
+    public class AnimatedEmotePayload : IActionPayload
+    {
+        public string Type { get; set; }
+        public string AudioBase64 { get; set; }
+        public string AnimationName { get; set; }
+        public float AnimationDuration { get; set; }
+    }
+
+    // For Agent_FacialExpression (wraps CFConnector.FacialExpressionData)
+    public class FacialExpressionPayload : IActionPayload
+    {
+        public string Expression { get; set; }
+        public float Intensity { get; set; }
+    }
+
+    // For Agent_StateChanged (wraps CFConnector.AgentState)
+    public class AgentStatePayload : IActionPayload
+    {
+        public string Status { get; set; }
+        public string LastActionType { get; set; }
+        public bool RoutinesRunning { get; set; }
+    }
+
+    // For Agent_Error
+    public class AgentErrorPayload : IActionPayload
+    {
+        public string ErrorMessage { get; set; }
+        public System.Exception Exception { get; set; }
+    }
+
+    // Generic payload wrapping a raw CharacterActionData for extensibility
+    public class CharacterActionPayload : IActionPayload
+    {
+        public string ActionType { get; set; }
+        public Dictionary<string, object> Parameters { get; set; }
+    }
+}
+```
+
+=== FILE 8: Assets/Scripts/Infrastructure/Messages/ActionMessageBus.cs ===
+
+Port from MB_N2N (reference: C:/DK/GL/MB_N2N/Assets/@Scripts/Infrastructure/Messages/ActionMessageBus.cs)
+
+Sealed wrapper around MessageChannel<ActionMessage> with filtered Subscribe overloads:
+- Subscribe(Action<ActionMessage> handler) - receives ALL messages
+- Subscribe(ActionId id, Action<ActionMessage> handler) - filtered by single ActionId
+- Subscribe(ActionId id, Action handler) - parameterless handler for specific ActionId
+- Subscribe(Action<ActionMessage> handler, params ActionId[] ids) - filtered by multiple ActionIds
+- Publish(ActionMessage message) - publishes to underlying channel
+- Dispose() - disposes underlying channel
+
+=== FILE 9: Assets/Scripts/Infrastructure/Messages/ActionDispatcher.cs ===
+
+Port from MB_N2N (reference: C:/DK/GL/MB_N2N/Assets/@Scripts/Infrastructure/Messages/ActionDispatcher.cs)
+
+- Sealed class implementing IDisposable
+- Constructor takes ActionMessageBus, subscribes to all messages
+- Dictionary<ActionId, List<IAction>> _registry
+- Register(IAction action) - adds to registry by action.Id
+- Unregister(IAction action) - removes from registry
+- OnAction(ActionMessage) - routes message to registered IAction handlers
+- Dispose() - disposes subscription, clears registry
+
+=== VERIFICATION ===
+After creating all 9 files:
+1. Ensure all files compile without errors (no missing references)
+2. Ensure MessageChannel<T>.Subscribe returns DisposableSubscription<T>
+3. Ensure ActionMessageBus wraps MessageChannel<ActionMessage>
+4. Ensure all classes are in namespace Golem.Infrastructure.Messages
+5. Ensure NO existing files were modified

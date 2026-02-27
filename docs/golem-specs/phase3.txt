@@ -1,0 +1,267 @@
+Phase 3: Managers Service Locator + Core Managers
+
+Create the Managers singleton (Service Locator pattern) and core manager classes for Golem.
+Port from MB_N2N but REMOVE all Unity.Netcode, Addressables, and network-specific code.
+This phase DEPENDS on Phase 1 and Phase 2 being complete.
+
+CRITICAL RULES:
+- DO NOT modify any existing Golem scripts
+- DO NOT modify Phase 1 or Phase 2 files
+- NO Unity.Netcode references (Golem doesn't have this package)
+- NO Addressables references (Golem doesn't have this package)
+- NO GameLogger references (Golem doesn't have this class) - use Debug.Log instead
+- Managers.cs has NO namespace (to match existing Golem scripts convention)
+- Core managers (ResourceManager, PoolManager, DataManager) also have NO namespace
+
+=== FILE 1: Assets/Scripts/Managers/Managers.cs ===
+
+Port from MB_N2N (reference: C:/DK/GL/MB_N2N/Assets/@Scripts/Managers/Managers.cs)
+REMOVE everything network-related. Keep only Infrastructure + Core managers.
+
+```csharp
+using System;
+using Golem.Infrastructure.Messages;
+using Golem.Infrastructure.State;
+using UnityEngine;
+
+public class Managers : MonoBehaviour
+{
+    public static bool Initialized { get; private set; } = false;
+
+    private static Managers s_instance;
+    private static Managers Instance
+    {
+        get
+        {
+            if (s_instance == null)
+                Init();
+            return s_instance;
+        }
+    }
+
+    #region Core
+    private readonly ActionMessageBus _actionBus = new ActionMessageBus();
+    private ActionDispatcher _actionDispatcher;
+    private StateMachine _stateMachine;
+
+    private DataManager _data = new DataManager();
+    private PoolManager _pool = new PoolManager();
+    private ResourceManager _resource = new ResourceManager();
+
+    public static ActionMessageBus ActionBus => Instance?._actionBus;
+    public static StateMachine StateMachine => Instance?._stateMachine;
+    public static DataManager Data => Instance?._data;
+    public static PoolManager Pool => Instance?._pool;
+    public static ResourceManager Resource => Instance?._resource;
+    #endregion
+
+    public static void Init()
+    {
+        if (s_instance == null && !Initialized)
+        {
+            Initialized = true;
+
+            GameObject go = GameObject.Find("@Managers");
+            if (go == null)
+            {
+                go = new GameObject { name = "@Managers" };
+                go.AddComponent<Managers>();
+            }
+
+            DontDestroyOnLoad(go);
+            s_instance = go.GetComponent<Managers>();
+        }
+    }
+
+    private void Awake()
+    {
+        if (s_instance != null && s_instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        s_instance = this;
+        DontDestroyOnLoad(gameObject);
+
+        // Infrastructure init
+        Debug.Log("[Managers] Initializing Infrastructure...");
+        if (_actionDispatcher == null)
+        {
+            _actionDispatcher = new ActionDispatcher(_actionBus);
+            Debug.Log("[Managers] ActionDispatcher created");
+        }
+
+        if (_stateMachine == null)
+        {
+            _stateMachine = new StateMachine(_actionBus);
+            Debug.Log("[Managers] StateMachine created");
+        }
+    }
+
+    private void Update() => PublishAction(ActionId.System_Update);
+    private void LateUpdate() => PublishAction(ActionId.System_LateUpdate);
+    private void FixedUpdate() => PublishAction(ActionId.System_FixedUpdate);
+
+    private void OnDestroy()
+    {
+        _stateMachine?.Dispose();
+        _actionDispatcher?.Dispose();
+        _actionBus?.Dispose();
+    }
+
+    #region Static Helpers
+    public static IDisposable Subscribe(ActionId actionId, Action handler)
+        => ActionBus?.Subscribe(actionId, handler);
+
+    public static IDisposable Subscribe(ActionId actionId, Action<ActionMessage> handler)
+        => ActionBus?.Subscribe(actionId, handler);
+
+    public static IDisposable SubscribeMultiple(Action<ActionMessage> handler, params ActionId[] actionIds)
+        => ActionBus?.Subscribe(handler, actionIds);
+
+    public static void RegisterAction(IAction action)
+        => Instance?._actionDispatcher?.Register(action);
+
+    public static void UnregisterAction(IAction action)
+        => Instance?._actionDispatcher?.Unregister(action);
+
+    public static void PublishAction(ActionId actionId)
+        => ActionBus?.Publish(ActionMessage.From(actionId));
+
+    public static void PublishAction(ActionId actionId, IActionPayload payload)
+        => ActionBus?.Publish(ActionMessage.From(actionId, payload));
+
+    public static void RegisterState(IState state)
+        => Instance?._stateMachine?.RegisterState(state);
+
+    public static void SetState(StateId stateId)
+        => Instance?._stateMachine?.SetState(stateId);
+
+    public static StateId CurrentStateId
+        => Instance?._stateMachine?.CurrentId ?? StateId.None;
+    #endregion
+}
+```
+
+=== FILE 2: Assets/Scripts/Managers/Core/ResourceManager.cs ===
+
+Simplified version - NO Addressables, NO NetworkPrefabsList, NO async loading.
+Uses Resources.Load<T> with Dictionary cache only.
+
+```csharp
+using System.Collections.Generic;
+using UnityEngine;
+
+public class ResourceManager
+{
+    private Dictionary<string, UnityEngine.Object> _resources = new Dictionary<string, UnityEngine.Object>();
+
+    public T Load<T>(string key) where T : UnityEngine.Object
+    {
+        if (_resources.TryGetValue(key, out var resource))
+            return resource as T;
+
+        // Cache miss - try Resources.Load
+        T loaded = Resources.Load<T>(key);
+        if (loaded != null)
+        {
+            _resources[key] = loaded;
+            return loaded;
+        }
+
+        // Sprite fallback
+        if (typeof(T) == typeof(Sprite) && !key.Contains(".sprite"))
+        {
+            if (_resources.TryGetValue($"{key}.sprite", out resource))
+                return resource as T;
+        }
+
+        return null;
+    }
+
+    public GameObject Instantiate(string key, Transform parent = null, bool pooling = false)
+    {
+        GameObject prefab = Load<GameObject>(key);
+        if (prefab == null)
+        {
+            Debug.LogError($"[ResourceManager] Failed to load prefab: {key}");
+            return null;
+        }
+
+        if (pooling)
+            return Managers.Pool.Pop(prefab);
+
+        GameObject go = UnityEngine.Object.Instantiate(prefab, parent);
+        go.name = prefab.name;
+        return go;
+    }
+
+    public void Destroy(GameObject go)
+    {
+        if (go == null) return;
+        if (Managers.Pool.Push(go)) return;
+        UnityEngine.Object.Destroy(go);
+    }
+
+    public void Clear()
+    {
+        _resources.Clear();
+    }
+}
+```
+
+=== FILE 3: Assets/Scripts/Managers/Core/PoolManager.cs ===
+
+Direct port from MB_N2N (reference: C:/DK/GL/MB_N2N/Assets/@Scripts/Managers/Core/PoolManager.cs)
+Keep the internal Pool class and PoolManager class exactly as MB_N2N.
+Uses UnityEngine.Pool.ObjectPool<GameObject>.
+Remove GameLogger, use Debug.Log.
+
+=== FILE 4: Assets/Scripts/Managers/Core/DataManager.cs ===
+
+Simplified version using ResourceManager for JSON loading.
+Remove MB_N2N-specific data types (MonsterData, HeroData, etc.).
+Keep the generic ILoader<Key, Value> interface and LoadJson pattern.
+
+```csharp
+using Newtonsoft.Json;
+using System.Collections.Generic;
+using UnityEngine;
+
+public interface ILoader<Key, Value>
+{
+    Dictionary<Key, Value> MakeDict();
+}
+
+public class DataManager
+{
+    public void Init()
+    {
+        Debug.Log("[DataManager] Initialized");
+        // Golem-specific data loading will be added here as needed
+    }
+
+    public T LoadJson<T>(string path) where T : class
+    {
+        TextAsset textAsset = Managers.Resource.Load<TextAsset>(path);
+        if (textAsset == null)
+        {
+            Debug.LogWarning($"[DataManager] Failed to load JSON: {path}");
+            return null;
+        }
+        return JsonConvert.DeserializeObject<T>(textAsset.text);
+    }
+}
+```
+
+=== VERIFICATION ===
+1. Managers.cs creates ActionMessageBus, ActionDispatcher, StateMachine in Awake
+2. Managers.cs publishes System_Update/LateUpdate/FixedUpdate
+3. ResourceManager uses ONLY Resources.Load (NO Addressables)
+4. PoolManager uses UnityEngine.Pool.ObjectPool<GameObject>
+5. DataManager uses Newtonsoft.Json (already in Golem's packages)
+6. NO Unity.Netcode, NO Addressables, NO GameLogger references
+7. NO namespace on any of these files (matching existing Golem convention)
+8. All 4 files compile without errors
+9. NO existing files modified

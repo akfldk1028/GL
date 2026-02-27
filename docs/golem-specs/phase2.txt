@@ -1,0 +1,126 @@
+Phase 2: State Machine System
+
+Create the state machine infrastructure for Golem by porting MB_N2N's StateMachine pattern.
+All new files go under Assets/Scripts/Infrastructure/State/ with namespace Golem.Infrastructure.State.
+This phase DEPENDS on Phase 1 (Infrastructure Messaging) being complete.
+
+CRITICAL RULES:
+- DO NOT modify any existing Golem scripts
+- DO NOT modify Phase 1 files (Infrastructure/Messages/)
+- Only create NEW files in Infrastructure/State/
+- Use block-scoped namespaces (not file-scoped)
+- Reference Golem.Infrastructure.Messages (from Phase 1) for ActionId, ActionMessage, IMessageChannel
+
+=== FILE 1: Assets/Scripts/Infrastructure/State/IState.cs ===
+
+Port from MB_N2N (reference: C:/DK/GL/MB_N2N/Assets/@Scripts/Infrastructure/State/IState.cs)
+
+```csharp
+using Golem.Infrastructure.Messages;
+
+namespace Golem.Infrastructure.State
+{
+    public interface IState
+    {
+        StateId Id { get; }
+        void Enter();
+        void Exit();
+        bool CanHandle(ActionId actionId);
+        void Handle(ActionMessage message);
+    }
+}
+```
+
+=== FILE 2: Assets/Scripts/Infrastructure/State/StateId.cs ===
+
+Golem-specific states (customized from MB_N2N):
+
+```csharp
+namespace Golem.Infrastructure.State
+{
+    public enum StateId
+    {
+        None = 0,
+        Boot,
+        Initializing,
+        Connected,
+        Disconnected,
+        Active,
+        Idle,
+        Performing
+    }
+}
+```
+
+=== FILE 3: Assets/Scripts/Infrastructure/State/StateMachine.cs ===
+
+Port from MB_N2N (reference: C:/DK/GL/MB_N2N/Assets/@Scripts/Infrastructure/State/StateMachine.cs)
+
+```csharp
+using System;
+using System.Collections.Generic;
+using Golem.Infrastructure.Messages;
+using UnityEngine;
+
+namespace Golem.Infrastructure.State
+{
+    public sealed class StateMachine : IDisposable
+    {
+        private readonly Dictionary<StateId, IState> _states = new Dictionary<StateId, IState>();
+        private readonly IMessageChannel<ActionMessage> _channel;
+        private readonly IDisposable _subscription;
+        private IState _current;
+
+        public StateMachine(IMessageChannel<ActionMessage> channel)
+        {
+            _channel = channel ?? throw new ArgumentNullException(nameof(channel));
+            _subscription = _channel.Subscribe(OnAction);
+        }
+
+        public StateId CurrentId => _current?.Id ?? StateId.None;
+
+        public void RegisterState(IState state)
+        {
+            if (state == null) throw new ArgumentNullException(nameof(state));
+            _states[state.Id] = state;
+        }
+
+        public void SetState(StateId id)
+        {
+            if (_states.TryGetValue(id, out var next))
+            {
+                if (_current == next) return;
+                _current?.Exit();
+                _current = next;
+                _current.Enter();
+            }
+            else
+            {
+                Debug.LogWarning($"[StateMachine] State {id} not registered.");
+            }
+        }
+
+        private void OnAction(ActionMessage message)
+        {
+            if (_current != null && _current.CanHandle(message.Id))
+            {
+                _current.Handle(message);
+            }
+        }
+
+        public void Dispose()
+        {
+            _subscription?.Dispose();
+            _states.Clear();
+            _current = null;
+        }
+    }
+}
+```
+
+=== VERIFICATION ===
+1. IState references ActionId and ActionMessage from Golem.Infrastructure.Messages
+2. StateMachine references IMessageChannel<ActionMessage> from Phase 1
+3. StateId enum has Golem-specific states (Boot, Initializing, Connected, Disconnected, Active, Idle, Performing)
+4. All 3 files compile without errors
+5. NO existing files modified

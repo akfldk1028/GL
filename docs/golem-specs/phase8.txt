@@ -1,0 +1,195 @@
+Phase 8: Integration & Bootstrap - GolemBootstrap
+
+Create the bootstrap entry point that initializes the entire Golem system in the correct order.
+This phase DEPENDS on Phase 1-7 being complete.
+
+CRITICAL RULES:
+- DO NOT modify any existing Golem scripts (CFConnector, CelesteActionController, EmotePlayer, PointClickController, CameraStateMachine, WavUtility)
+- GolemBootstrap should be the FIRST script to execute ([DefaultExecutionOrder(-100)])
+- All initialization must be defensive (null checks, try-catch)
+- No namespace on this file
+
+=== FILE 1: Assets/Scripts/GolemBootstrap.cs ===
+
+```csharp
+using Golem.Infrastructure.State;
+using UnityEngine;
+
+/// <summary>
+/// Entry point for the Golem AI Agent system.
+/// Initializes all infrastructure in the correct order:
+/// 1. Managers (ActionBus, ActionDispatcher, StateMachine, ResourceManager, PoolManager, DataManager)
+/// 2. AINetworkManager (CFConnector → ActionBus bridge)
+/// 3. Debug Overlay (development builds only)
+/// 4. State Machine initial states
+///
+/// Place this script on a GameObject in your startup scene, or it will auto-create itself.
+/// </summary>
+[DefaultExecutionOrder(-100)]
+public class GolemBootstrap : MonoBehaviour
+{
+    private static bool _bootstrapped = false;
+
+    private void Awake()
+    {
+        if (_bootstrapped)
+        {
+            Debug.Log("[GolemBootstrap] Already bootstrapped. Destroying duplicate.");
+            Destroy(gameObject);
+            return;
+        }
+        _bootstrapped = true;
+
+        Debug.Log("[GolemBootstrap] === Golem AI Agent System Initializing ===");
+
+        // Step 1: Initialize Managers (creates @Managers GameObject)
+        Managers.Init();
+        Debug.Log("[GolemBootstrap] Step 1: Managers initialized.");
+
+        // Step 2: Create AINetworkManager (bridges CFConnector → ActionBus)
+        CreateAINetworkManager();
+        Debug.Log("[GolemBootstrap] Step 2: AINetworkManager created.");
+
+        // Step 3: Create Debug Overlay (development builds only)
+        CreateDebugOverlay();
+
+        // Step 4: Register initial states
+        RegisterStates();
+        Debug.Log("[GolemBootstrap] Step 4: States registered.");
+
+        // Step 5: Set initial state
+        Managers.SetState(StateId.Boot);
+        Debug.Log("[GolemBootstrap] Step 5: Initial state set to Boot.");
+
+        Debug.Log("[GolemBootstrap] === Golem AI Agent System Ready ===");
+    }
+
+    private void CreateAINetworkManager()
+    {
+        if (AINetworkManager.Instance != null)
+        {
+            Debug.Log("[GolemBootstrap] AINetworkManager already exists.");
+            return;
+        }
+
+        var go = new GameObject("@AINetworkManager");
+        DontDestroyOnLoad(go);
+        go.AddComponent<AINetworkManager>();
+    }
+
+    private void CreateDebugOverlay()
+    {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        var go = new GameObject("@GolemDebugOverlay");
+        DontDestroyOnLoad(go);
+        go.AddComponent<GolemDebugOverlay>();
+        Debug.Log("[GolemBootstrap] Step 3: Debug overlay created (F12 to toggle).");
+#else
+        Debug.Log("[GolemBootstrap] Step 3: Debug overlay skipped (release build).");
+#endif
+    }
+
+    private void RegisterStates()
+    {
+        // Register basic states for the state machine
+        // These are placeholder implementations - each state simply logs on Enter/Exit
+        Managers.RegisterState(new SimpleState(StateId.Boot));
+        Managers.RegisterState(new SimpleState(StateId.Initializing));
+        Managers.RegisterState(new SimpleState(StateId.Connected));
+        Managers.RegisterState(new SimpleState(StateId.Disconnected));
+        Managers.RegisterState(new SimpleState(StateId.Active));
+        Managers.RegisterState(new SimpleState(StateId.Idle));
+        Managers.RegisterState(new SimpleState(StateId.Performing));
+    }
+
+    /// <summary>
+    /// Simple state implementation for initial registration.
+    /// Logs Enter/Exit transitions. Can be replaced with proper state classes later.
+    /// </summary>
+    private class SimpleState : IState
+    {
+        public StateId Id { get; }
+
+        public SimpleState(StateId id) { Id = id; }
+
+        public void Enter()
+        {
+            Debug.Log($"[StateMachine] Entered state: {Id}");
+        }
+
+        public void Exit()
+        {
+            Debug.Log($"[StateMachine] Exited state: {Id}");
+        }
+
+        public bool CanHandle(Golem.Infrastructure.Messages.ActionId actionId)
+        {
+            // Default: handle Agent_Connected and Agent_Disconnected for state transitions
+            return actionId == Golem.Infrastructure.Messages.ActionId.Agent_Connected ||
+                   actionId == Golem.Infrastructure.Messages.ActionId.Agent_Disconnected;
+        }
+
+        public void Handle(Golem.Infrastructure.Messages.ActionMessage message)
+        {
+            // Auto-transition on connection events
+            if (message.Id == Golem.Infrastructure.Messages.ActionId.Agent_Connected)
+            {
+                Managers.SetState(StateId.Connected);
+            }
+            else if (message.Id == Golem.Infrastructure.Messages.ActionId.Agent_Disconnected)
+            {
+                Managers.SetState(StateId.Disconnected);
+            }
+        }
+    }
+}
+```
+
+=== FINAL VERIFICATION (ALL PHASES) ===
+
+After this phase, the complete Golem system should have:
+
+1. Infrastructure/Messages/ (9 files from Phase 1):
+   - IMessageChannel.cs, MessageChannel.cs, BufferedMessageChannel.cs, DisposableSubscription.cs
+   - ActionId.cs, ActionMessage.cs, ActionPayloads.cs, ActionMessageBus.cs, ActionDispatcher.cs
+
+2. Infrastructure/State/ (3 files from Phase 2):
+   - IState.cs, StateId.cs, StateMachine.cs
+
+3. Managers/ (4 files from Phase 3, modified in Phase 6):
+   - Managers.cs (with AgentManager property added in Phase 6)
+   - Core/ResourceManager.cs, Core/PoolManager.cs, Core/DataManager.cs
+
+4. Managers/Contents/ (2 files from Phase 6):
+   - AgentInstance.cs, AgentManager.cs
+
+5. Systems/Networking/ (1 new file from Phase 4):
+   - AINetworkManager.cs (CFConnector.cs untouched)
+
+6. Character/ (2 new files from Phase 5):
+   - GolemCharacterController.cs, GolemEmoteHandler.cs
+
+7. Debug/ (1 file from Phase 7):
+   - GolemDebugOverlay.cs
+
+8. GolemBootstrap.cs (this phase)
+
+TOTAL: 22 new files, 1 modification (Managers.cs +2 lines in Phase 6)
+
+EXISTING FILES UNCHANGED:
+- CFConnector.cs
+- CelesteActionController.cs (CharacterActionController class)
+- PointClickController.cs
+- EmotePlayer.cs
+- CameraStateMachine.cs
+- CameraStateSO.cs
+- CameraStateTransitionSO.cs
+- WavUtility.cs
+
+Compile the project and verify:
+1. No compiler errors
+2. GolemBootstrap creates all systems on scene load
+3. F12 shows debug overlay
+4. CFConnector events flow through AINetworkManager → ActionBus
+5. GolemCharacterController drives PointClickController via ActionBus
+6. Existing CelesteActionController and EmotePlayer continue to work

@@ -1,0 +1,283 @@
+Phase 5: Agent Action System - GolemCharacterController + GolemEmoteHandler
+
+Create new ActionBus-based character controller and emote handler that work alongside (NOT replace) the existing CelesteActionController and EmotePlayer.
+This phase DEPENDS on Phase 1-4 being complete.
+
+CRITICAL RULES:
+- DO NOT modify CelesteActionController.cs (CharacterActionController class) - it continues to work via CFConnector events
+- DO NOT modify EmotePlayer.cs - it continues to work via CFConnector events
+- DO NOT modify PointClickController.cs - only CALL its public methods
+- DO NOT modify CameraStateMachine.cs - only CALL its public method ChangeState(CameraStateSO)
+- GolemCharacterController calls PointClickController methods DIRECTLY (not via SendMessage)
+- No namespace on these files (matching existing Golem MonoBehaviour convention)
+- These new controllers subscribe to ActionBus, not CFConnector events
+
+REFERENCE - PointClickController Public API (from C:/DK/GL/Golem/Assets/Scripts/Character/PointClickController.cs):
+```
+public void MoveToPointPublic(Vector3 point)
+public void SitAtInteractionSpot(Transform interaction)
+public void ExamineAtInteractionSpot(Transform interaction)
+public void PlayArcadeAtSpot(Transform interaction)
+public void ForceStandUp()
+```
+
+REFERENCE - CameraStateMachine Public API:
+```
+public void ChangeState(CameraStateSO newState)
+```
+
+=== FILE 1: Assets/Scripts/Character/GolemCharacterController.cs ===
+
+```csharp
+using System;
+using System.Collections.Generic;
+using Golem.Infrastructure.Messages;
+using UnityEngine;
+
+/// <summary>
+/// ActionBus-based character controller. Subscribes to Character_* ActionIds
+/// and drives PointClickController directly (no SendMessage).
+/// Works in parallel with existing CharacterActionController.
+/// </summary>
+public class GolemCharacterController : MonoBehaviour
+{
+    [Header("References")]
+    [SerializeField] private PointClickController pointClick;
+    [SerializeField] private CameraStateMachine cameraStateMachine;
+
+    private List<IDisposable> _subscriptions = new List<IDisposable>();
+
+    private void Start()
+    {
+        // Auto-find references if not assigned
+        if (pointClick == null)
+            pointClick = GetComponent<PointClickController>() ?? FindObjectOfType<PointClickController>();
+
+        if (cameraStateMachine == null)
+        {
+            var cam = Camera.main;
+            if (cam != null)
+                cameraStateMachine = cam.GetComponent<CameraStateMachine>();
+        }
+
+        // Subscribe to ActionBus
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_MoveToLocation, OnMoveToLocation));
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_SitAtChair, OnSitAtChair));
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_StandUp, OnStandUp));
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_ExamineMenu, OnExamineMenu));
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_PlayArcade, OnPlayArcade));
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_ChangeCameraAngle, OnChangeCameraAngle));
+        _subscriptions.Add(Managers.Subscribe(ActionId.Character_Idle, OnIdle));
+
+        Debug.Log("[GolemCharacterController] Subscribed to ActionBus character events.");
+    }
+
+    private void OnDestroy()
+    {
+        foreach (var sub in _subscriptions)
+            sub?.Dispose();
+        _subscriptions.Clear();
+    }
+
+    // --- Action Handlers ---
+
+    private void OnMoveToLocation(ActionMessage msg)
+    {
+        if (pointClick == null) return;
+        if (msg.TryGetPayload<MoveToLocationPayload>(out var payload))
+        {
+            // If destination is set (non-zero), use it directly
+            if (payload.Destination != Vector3.zero)
+            {
+                pointClick.MoveToPointPublic(payload.Destination);
+                return;
+            }
+
+            // Otherwise find by location name
+            var target = FindTransformByNameContains(payload.Location);
+            Vector3 dest = target != null ? target.position : transform.position;
+            pointClick.MoveToPointPublic(dest);
+        }
+    }
+
+    private void OnSitAtChair(ActionMessage msg)
+    {
+        if (pointClick == null) return;
+        if (msg.TryGetPayload<SitAtChairPayload>(out var payload))
+        {
+            GameObject[] chairs = null;
+            try { chairs = GameObject.FindGameObjectsWithTag("Caffee Chair"); } catch { }
+            if (chairs != null && chairs.Length > 0)
+            {
+                int idx = Mathf.Clamp(payload.ChairNumber - 1, 0, chairs.Length - 1);
+                var chosen = chairs[idx];
+                var interaction = chosen.transform.Find("InteractionSpot");
+                pointClick.SitAtInteractionSpot(interaction != null ? interaction : chosen.transform);
+            }
+            else
+            {
+                Debug.LogWarning("[GolemCharacterController] No chairs found with tag 'Caffee Chair'.");
+            }
+        }
+    }
+
+    private void OnStandUp(ActionMessage msg)
+    {
+        if (pointClick == null) return;
+        pointClick.ForceStandUp();
+    }
+
+    private void OnExamineMenu(ActionMessage msg)
+    {
+        if (pointClick == null) return;
+        GameObject[] ads = null;
+        try { ads = GameObject.FindGameObjectsWithTag("Cafe Ad Display"); } catch { }
+        if (ads != null && ads.Length > 0)
+        {
+            var chosen = ads[0];
+            var interaction = chosen.transform.Find("InteractionSpot");
+            pointClick.ExamineAtInteractionSpot(interaction != null ? interaction : chosen.transform);
+        }
+    }
+
+    private void OnPlayArcade(ActionMessage msg)
+    {
+        if (pointClick == null) return;
+        GameObject[] arcades = null;
+        try { arcades = GameObject.FindGameObjectsWithTag("Arcade"); } catch { }
+        if (arcades != null && arcades.Length > 0)
+        {
+            var chosen = arcades[0];
+            var interaction = chosen.transform.Find("InteractionSpot");
+            pointClick.PlayArcadeAtSpot(interaction != null ? interaction : chosen.transform);
+        }
+    }
+
+    private void OnChangeCameraAngle(ActionMessage msg)
+    {
+        if (cameraStateMachine == null) return;
+        if (msg.TryGetPayload<ChangeCameraAnglePayload>(out var payload))
+        {
+            // Load CameraStateSO by name from Resources
+            var stateSO = Resources.Load<CameraStateSO>($"CameraStates/{payload.Angle}");
+            if (stateSO != null)
+            {
+                cameraStateMachine.ChangeState(stateSO);
+            }
+            else
+            {
+                Debug.LogWarning($"[GolemCharacterController] CameraStateSO not found: CameraStates/{payload.Angle}");
+            }
+        }
+    }
+
+    private void OnIdle(ActionMessage msg)
+    {
+        if (pointClick == null) return;
+        if (msg.TryGetPayload<IdlePayload>(out var payload))
+        {
+            string idleType = payload.IdleType ?? "standing";
+            if (idleType == "standing")
+                pointClick.ForceStandUp();
+            else if (idleType == "sitting")
+                OnSitAtChair(ActionMessage.From(ActionId.Character_SitAtChair, new SitAtChairPayload { ChairNumber = 1 }));
+        }
+    }
+
+    // --- Helpers ---
+
+    private Transform FindTransformByNameContains(string namePart)
+    {
+        if (string.IsNullOrEmpty(namePart)) return null;
+        namePart = namePart.ToLower();
+        var all = FindObjectsOfType<Transform>();
+        foreach (var t in all)
+        {
+            if (t != null && t.name != null && t.name.ToLower().Contains(namePart))
+                return t;
+        }
+        return null;
+    }
+}
+```
+
+=== FILE 2: Assets/Scripts/Character/GolemEmoteHandler.cs ===
+
+```csharp
+using System;
+using System.Collections.Generic;
+using Golem.Infrastructure.Messages;
+using UnityEngine;
+
+/// <summary>
+/// ActionBus-based emote handler. Subscribes to Agent_VoiceEmote, Agent_AnimatedEmote,
+/// and Agent_FacialExpression. Works in parallel with existing EmotePlayer.
+/// </summary>
+public class GolemEmoteHandler : MonoBehaviour
+{
+    [SerializeField] private Animator animator;
+
+    private List<IDisposable> _subscriptions = new List<IDisposable>();
+
+    private void Start()
+    {
+        if (animator == null)
+            animator = GetComponent<Animator>() ?? GetComponentInChildren<Animator>();
+
+        _subscriptions.Add(Managers.Subscribe(ActionId.Agent_VoiceEmote, OnVoiceEmote));
+        _subscriptions.Add(Managers.Subscribe(ActionId.Agent_AnimatedEmote, OnAnimatedEmote));
+        _subscriptions.Add(Managers.Subscribe(ActionId.Agent_FacialExpression, OnFacialExpression));
+
+        Debug.Log("[GolemEmoteHandler] Subscribed to ActionBus emote events.");
+    }
+
+    private void OnDestroy()
+    {
+        foreach (var sub in _subscriptions)
+            sub?.Dispose();
+        _subscriptions.Clear();
+    }
+
+    private void OnVoiceEmote(ActionMessage msg)
+    {
+        if (msg.TryGetPayload<VoiceEmotePayload>(out var payload))
+        {
+            Debug.Log($"[GolemEmoteHandler] Voice emote received: {payload.Type}");
+            // Voice audio playback is handled by existing EmotePlayer via CFConnector.OnVoiceEmote
+            // This handler can be extended for additional voice-related logic (lip sync, etc.)
+        }
+    }
+
+    private void OnAnimatedEmote(ActionMessage msg)
+    {
+        if (msg.TryGetPayload<AnimatedEmotePayload>(out var payload))
+        {
+            Debug.Log($"[GolemEmoteHandler] Animated emote: {payload.AnimationName}");
+            if (animator != null && !string.IsNullOrEmpty(payload.AnimationName))
+            {
+                animator.SetTrigger(payload.AnimationName);
+            }
+        }
+    }
+
+    private void OnFacialExpression(ActionMessage msg)
+    {
+        if (msg.TryGetPayload<FacialExpressionPayload>(out var payload))
+        {
+            Debug.Log($"[GolemEmoteHandler] Facial expression: {payload.Expression} (intensity: {payload.Intensity})");
+            // Facial expression logic - can be extended to drive blend shapes
+        }
+    }
+}
+```
+
+=== VERIFICATION ===
+1. GolemCharacterController subscribes to ActionBus, NOT CFConnector events
+2. GolemCharacterController calls PointClickController methods DIRECTLY (not SendMessage)
+3. Existing CharacterActionController (CelesteActionController.cs) still works via CFConnector - NOT modified
+4. Existing EmotePlayer still works via CFConnector - NOT modified
+5. GolemEmoteHandler is a PARALLEL handler for emote events, not a replacement
+6. All payload types from Phase 1 (ActionPayloads.cs) are correctly used
+7. Defensive null checks everywhere
+8. Both files compile without errors
+9. NO existing files modified

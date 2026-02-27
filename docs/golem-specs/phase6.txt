@@ -1,0 +1,157 @@
+Phase 6: Multi-Agent Support - AgentManager + AgentInstance
+
+Create the agent management system to support multiple AI agent characters.
+This phase DEPENDS on Phase 1-5 being complete.
+
+CRITICAL RULES:
+- DO NOT modify any existing Golem scripts
+- Only ADD a new static property to Managers.cs (from Phase 3) - do NOT rewrite the file
+- No namespace on these files (matching existing Golem convention)
+
+=== FILE 1: Assets/Scripts/Managers/Contents/AgentInstance.cs ===
+
+Data class holding references for a single agent instance:
+
+```csharp
+using UnityEngine;
+
+/// <summary>
+/// Holds all component references for a single AI agent character instance.
+/// </summary>
+public class AgentInstance
+{
+    public string AgentId { get; private set; }
+    public GameObject Root { get; private set; }
+    public GolemCharacterController Controller { get; private set; }
+    public PointClickController PointClick { get; private set; }
+    public GolemEmoteHandler EmoteHandler { get; private set; }
+    public Animator Animator { get; private set; }
+
+    public AgentInstance(string agentId, GameObject root)
+    {
+        AgentId = agentId;
+        Root = root;
+
+        // Auto-discover components
+        if (root != null)
+        {
+            Controller = root.GetComponent<GolemCharacterController>() ?? root.GetComponentInChildren<GolemCharacterController>();
+            PointClick = root.GetComponent<PointClickController>() ?? root.GetComponentInChildren<PointClickController>();
+            EmoteHandler = root.GetComponent<GolemEmoteHandler>() ?? root.GetComponentInChildren<GolemEmoteHandler>();
+            Animator = root.GetComponent<Animator>() ?? root.GetComponentInChildren<Animator>();
+        }
+    }
+}
+```
+
+=== FILE 2: Assets/Scripts/Managers/Contents/AgentManager.cs ===
+
+Manager for multiple agent instances:
+
+```csharp
+using System.Collections.Generic;
+using UnityEngine;
+
+/// <summary>
+/// Manages multiple AI agent character instances. Each agent has a unique ID
+/// and its own set of components (controller, point-click, emotes, animator).
+/// </summary>
+public class AgentManager
+{
+    private readonly Dictionary<string, AgentInstance> _agents = new Dictionary<string, AgentInstance>();
+    private Transform _agentsRoot;
+
+    private Transform AgentsRoot
+    {
+        get
+        {
+            if (_agentsRoot == null)
+            {
+                var go = GameObject.Find("@Agents");
+                if (go == null)
+                {
+                    go = new GameObject("@Agents");
+                    Object.DontDestroyOnLoad(go);
+                }
+                _agentsRoot = go.transform;
+            }
+            return _agentsRoot;
+        }
+    }
+
+    public int Count => _agents.Count;
+
+    public AgentInstance Register(string agentId, GameObject root)
+    {
+        if (string.IsNullOrEmpty(agentId))
+        {
+            Debug.LogWarning("[AgentManager] Cannot register agent with empty ID.");
+            return null;
+        }
+
+        if (_agents.ContainsKey(agentId))
+        {
+            Debug.LogWarning($"[AgentManager] Agent '{agentId}' already registered. Updating.");
+            _agents.Remove(agentId);
+        }
+
+        // Parent under @Agents root
+        if (root != null)
+        {
+            root.transform.SetParent(AgentsRoot);
+        }
+
+        var instance = new AgentInstance(agentId, root);
+        _agents[agentId] = instance;
+        Debug.Log($"[AgentManager] Registered agent: {agentId}");
+        return instance;
+    }
+
+    public void Unregister(string agentId)
+    {
+        if (_agents.TryGetValue(agentId, out var instance))
+        {
+            _agents.Remove(agentId);
+            Debug.Log($"[AgentManager] Unregistered agent: {agentId}");
+        }
+    }
+
+    public AgentInstance GetAgent(string agentId)
+    {
+        _agents.TryGetValue(agentId, out var instance);
+        return instance;
+    }
+
+    public bool HasAgent(string agentId) => _agents.ContainsKey(agentId);
+
+    public IReadOnlyDictionary<string, AgentInstance> GetAllAgents() => _agents;
+
+    public void Clear()
+    {
+        _agents.Clear();
+    }
+}
+```
+
+=== MODIFICATION: Assets/Scripts/Managers/Managers.cs ===
+
+ADD the following to the existing Managers.cs (Phase 3):
+
+In the #region Core section, add:
+```csharp
+private AgentManager _agent = new AgentManager();
+public static AgentManager Agent => Instance?._agent;
+```
+
+This is a MINIMAL addition - only add these 2 lines. Do NOT rewrite the entire file.
+The AgentManager field should be added alongside the existing _data, _pool, _resource fields.
+The static property should be added alongside the existing Data, Pool, Resource properties.
+
+=== VERIFICATION ===
+1. AgentInstance auto-discovers components from root GameObject
+2. AgentManager maintains Dictionary<string, AgentInstance>
+3. @Agents root GameObject is created with DontDestroyOnLoad
+4. Managers.Agent static property provides access to AgentManager
+5. Minimal modification to Managers.cs (only 2 lines added)
+6. All files compile without errors
+7. NO existing Golem scripts modified (only Phase 3 Managers.cs gets 2 lines)
