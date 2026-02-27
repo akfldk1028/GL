@@ -101,15 +101,15 @@ namespace Golem.Character.Autonomous
             if (k < 0) k = _config.topKEpisodes;
 
             long nowTicks = DateTime.UtcNow.Ticks;
-            float halfLifeTicks = _config.recencyHalfLife * TimeSpan.TicksPerSecond;
+            double halfLifeTicks = (double)_config.recencyHalfLife * TimeSpan.TicksPerSecond;
 
             var scored = new List<(EpisodeEntry entry, float score)>();
             for (int i = 0; i < _episodes.Count; i++)
             {
                 var ep = _episodes[i];
                 // Recency: exponential decay
-                float ageTicks = nowTicks - ep.timestampTicks;
-                float recency = Mathf.Exp(-0.693f * ageTicks / halfLifeTicks); // ln(2) ≈ 0.693
+                double ageTicks = nowTicks - ep.timestampTicks;
+                float recency = Mathf.Exp((float)(-0.693 * ageTicks / halfLifeTicks)); // ln(2) ≈ 0.693
 
                 // Importance: stored value
                 float importance = ep.importance;

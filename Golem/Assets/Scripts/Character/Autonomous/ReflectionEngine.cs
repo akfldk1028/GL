@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using Golem.Infrastructure.Messages;
-using Newtonsoft.Json.Linq;
 using UnityEngine;
 
 namespace Golem.Character.Autonomous
@@ -11,9 +10,6 @@ namespace Golem.Character.Autonomous
     {
         private readonly MemoryConfigSO _config;
         private readonly MemoryStore _memoryStore;
-        private readonly AIDecisionConnector _connector;
-        private readonly AIDecisionConfigSO _decisionConfig;
-        private readonly MonoBehaviour _runner;
 
         private int _actionsSinceReflection;
         private float _accumulatedImportance;
@@ -28,9 +24,6 @@ namespace Golem.Character.Autonomous
         {
             _config = config;
             _memoryStore = memoryStore;
-            _connector = connector;
-            _decisionConfig = decisionConfig;
-            _runner = runner;
         }
 
         public void TrackAction(float importance)
@@ -62,18 +55,7 @@ namespace Golem.Character.Autonomous
                 yield break;
             }
 
-            string prompt = BuildReflectionPrompt(topEpisodes);
-
-            // Use the connector's query mechanism but with a custom prompt
-            // We'll do a direct query through the connector's infrastructure
-            DecisionResult dummyResult = null;
-            var reflectionActions = new List<string> { "[REFLECTION MODE]" };
-            yield return _runner.StartCoroutine(
-                _connector.QueryDecision(reflectionActions, r => dummyResult = r));
-
-            // Parse the reflection from the raw response — we actually need to send a custom prompt
-            // Since QueryDecision builds its own prompt, we'll use the observations from the last decision's reasoning
-            // For now, generate observations from the episode patterns directly
+            // Generate observations from episode patterns (local analysis, no LLM call)
             var observations = GenerateLocalObservations(topEpisodes);
 
             foreach (string obs in observations)
@@ -100,24 +82,6 @@ namespace Golem.Character.Autonomous
             _isReflecting = false;
 
             Debug.Log($"[Reflection] Complete. Generated {observations.Count} observations.");
-        }
-
-        private string BuildReflectionPrompt(List<EpisodeEntry> episodes)
-        {
-            string name = _decisionConfig != null ? _decisionConfig.characterName : "Golem";
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine($"You are {name}. Review your recent experiences and generate 1-2 abstract observations.");
-            sb.AppendLine();
-            sb.AppendLine("## Recent Experiences");
-            foreach (var ep in episodes)
-            {
-                string status = ep.succeeded ? "OK" : "FAILED";
-                string timeStr = ep.Timestamp.ToString("HH:mm");
-                sb.AppendLine($"- [{timeStr}] {ep.actionName} ({ep.thought}) [{status}]");
-            }
-            sb.AppendLine();
-            sb.AppendLine("Respond ONLY with JSON: {\"observations\": [\"...\", \"...\"]}");
-            return sb.ToString();
         }
 
         private List<string> GenerateLocalObservations(List<EpisodeEntry> episodes)

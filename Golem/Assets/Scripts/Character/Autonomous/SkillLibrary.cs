@@ -47,9 +47,26 @@ namespace Golem.Character.Autonomous
             var existing = Match(situationPattern);
             if (existing != null)
             {
-                existing.useCount++;
-                if (succeeded)
-                    existing.successCount++;
+                if (existing.recommendedActionId == actionId)
+                {
+                    // Same action — update counts
+                    existing.useCount++;
+                    if (succeeded)
+                        existing.successCount++;
+                }
+                else
+                {
+                    // Different action for same situation — track as use
+                    existing.useCount++;
+                    if (succeeded && existing.SuccessRate < 0.5f)
+                    {
+                        // Replace with better-performing action
+                        existing.recommendedActionId = actionId;
+                        existing.actionName = actionName;
+                        existing.target = target;
+                        existing.successCount++;
+                    }
+                }
                 return;
             }
 

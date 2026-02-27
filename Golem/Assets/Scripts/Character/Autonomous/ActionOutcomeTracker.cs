@@ -100,6 +100,7 @@ namespace Golem.Character.Autonomous
 
             _memoryStore.OnEpisodeAdded();
 
+            // Log after AddEpisode which calculates importance
             Debug.Log($"[OutcomeTracker] Recorded: {_pendingActionName} → {(succeeded ? "SUCCESS" : "FAIL")} (importance={episode.importance:F2})");
             OnOutcomeRecorded?.Invoke(succeeded);
         }
