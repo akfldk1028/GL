@@ -6,12 +6,13 @@ AI 서버(WebSocket)가 보내는 명령으로 3D 캐릭터가 자연스럽게 �
 
 ## Core Logic — 어떻게 작동하는가
 
-**현재 (Phase 1-6 완료)**:
+**현재 (Phase 1-9 + Tier 2 완료)**:
 캐릭터는 10-state FSM이 모든 행동을 제어한다. AI 서버가 WebSocket으로 `"sit"` 같은 명령을 보내면,
-`ActionTypeRegistry`가 ActionId로 매핑 → `ActionMessageBus`가 Pub/Sub으로 배포 → `CharacterCommandRouter`가 FSM 상태 전환 → Animator가 애니메이션 재생. AI 서버 명령이 없으면 `IdleScheduler`가 **가중 랜덤**으로 행동을 선택한다 (산책 30%, 두리번 20%, 앉기 15%, ...).
+`ActionTypeRegistry`가 ActionId로 매핑 → `ActionMessageBus`가 Pub/Sub으로 배포 → `CharacterCommandRouter`가 FSM 상태 전환 → Animator가 애니메이션 재생. AI 서버 명령이 없으면 `IdleScheduler`가 **LLM + Memory 기반 자율 판단**으로 행동을 선택한다.
 
-**목표 (Phase 9-10 계획)**:
-가중 랜덤을 **LLM 판단**으로 교체. 캐릭터의 FSM 상태, 위치, 주변 오브젝트, 최근 행동 5개를 LLM에 보내고 "다음에 뭘 할지" JSON으로 받는다. Voyager 패턴의 스킬 라이브러리로 성공한 행동을 캐시하고, SIMA 2 패턴의 confidence 점수로 불확실할 때 폴백한다.
+**Tier 1 (LLM Decision Brain)**: FSM 상태, 위치, 주변 오브젝트, 최근 5개 행동, 성격을 LLM에 쿼리. confidence ≥ 0.3이면 실행, 아니면 가중 랜덤 폴백.
+
+**Tier 2 (Memory System)**: 과거 경험을 기억하는 4종 메모리 시스템. Episodic Memory로 행동 이력 저장, Skill Library(Voyager 패턴)로 성공 패턴 캐시, Reflection Engine으로 주기적 자기성찰, ReAct 패턴으로 실패 시 재시도.
 
 ## Research Basis — 참조 논문
 
@@ -32,15 +33,15 @@ AI 서버(WebSocket)가 보내는 명령으로 3D 캐릭터가 자연스럽게 �
 ## Architecture Overview
 
 ```
-Layer 5 ─ Decision Brain (PLANNED) ── LLM 기반 자율 판단 (weighted random 대체)
-                                        AIDecisionConnector → Memory + Skills
-                                        자세한 스펙: docs/golem-specs/gl-autonomous-decision-system.md
+Layer 5 ─ Decision Brain ─────────── LLM 기반 자율 판단 + 4종 메모리 시스템
+                                        Tier 1: AIDecisionConnector (LLM 쿼리)
+                                        Tier 2: MemoryStore + SkillLibrary + ReflectionEngine
 
 Layer 4 ─ AI Server Commands ──── CFConnector → AINetworkManager → ActionBus
                                     → CharacterCommandRouter (13 commands 구독)
 
 Layer 3 ─ Autonomous Behavior ─── IdleScheduler (AI 명령 없을 때 자율 행동)
-                                    → 현재: 가중 랜덤 │ 목표: LLM 판단 (Layer 5)
+                                    → Skill Check → Memory Retrieve → LLM → Track → Reflect
 
 Layer 2 ─ Behavior Modules ────── 5개 모듈 (항상 작동, FSM 독립)
                                     호흡 │ 시선 │ ThinkTime │ Idle변형 │ 가감속
@@ -121,7 +122,7 @@ sub.Dispose();
 ## Project Structure
 
 ```
-Assets/Scripts/                              ~70 files
+Assets/Scripts/                              ~78 files
 ├── GolemBootstrap.cs                        시스템 초기화 (Exec Order -100)
 │
 ├── Character/
@@ -171,9 +172,17 @@ Assets/Scripts/                              ~70 files
 │   └── Autonomous/                          ── 자율 행동 ──
 │       ├── AutonomousAction.cs              ActionId + Payload + ExpectedDuration
 │       ├── AIDecisionConfigSO.cs            LLM 엔드포인트 설정 (Tier 1)
-│       ├── AIDecisionConnector.cs           HTTP POST → LLM 쿼리 + 응답 파싱 (Tier 1)
-│       ├── IdleScheduler.cs                 자율 행동 스케줄러 (LLM + 가중 랜덤 폴백)
-│       └── IdleSchedulerConfigSO.cs         ScriptableObject 설정
+│       ├── AIDecisionConnector.cs           HTTP POST → LLM 쿼리 + 메모리 프롬프트 (Tier 1+2)
+│       ├── IdleScheduler.cs                 자율 행동 스케줄러 (Skill→Memory→LLM→Track→Reflect)
+│       ├── IdleSchedulerConfigSO.cs         ScriptableObject 설정
+│       ├── EpisodeEntry.cs                  Episodic Memory 데이터 모델 (Tier 2)
+│       ├── SkillEntry.cs                    Skill Library 데이터 모델 (Tier 2)
+│       ├── MemoryConfigSO.cs               메모리 시스템 설정 ScriptableObject (Tier 2)
+│       ├── EpisodicMemory.cs               점수 기반 에피소드 검색 + FIFO 관리 (Tier 2)
+│       ├── SkillLibrary.cs                  상황 패턴 매칭 + 성공 패턴 캐시 (Tier 2)
+│       ├── MemoryStore.cs                   메모리 파사드 + JSON 영속화 (Tier 2)
+│       ├── ActionOutcomeTracker.cs          행동 결과 추적 + 메모리 기록 (Tier 2)
+│       └── ReflectionEngine.cs              주기적 자기성찰 + 관찰 생성 (Tier 2)
 │
 ├── Infrastructure/
 │   ├── Messages/
@@ -324,15 +333,61 @@ CharacterCommandRouter가 ActionBus에서 13개 명령을 구독하여 FSM 전�
 **완료 보고**: 각 명령 완료 시 `Agent_ActionCompleted` 발행.
 StandUp(Sitting→StandTransition 경로)만 CompletionTracker가 애니메이션 완료를 감지하여 발행.
 
-## Autonomous Behavior (IdleScheduler + AIDecisionConnector)
+## Autonomous Behavior (IdleScheduler + AIDecisionConnector + Memory)
 
 AI 서버 명령 없이 Idle 상태가 N초 지속되면 자율 행동 시작.
 
-**Tier 1 (LLM 판단)**: `AIDecisionConfigSO`가 할당되고 `useLLM=true`이면 LLM에 쿼리.
-FSM 상태, 위치, 주변 오브젝트, 최근 5개 행동, 성격을 프롬프트로 전송.
+### Decision Flow (Tier 1+2)
+
+```
+Timer → [1] BuildContextHash (fsmState|nearbyTags|timeBucket)
+       → [2] SkillLibrary.Match → ShouldUseSkill?
+             ├─ Yes → 캐시된 행동 실행 (LLM 스킵) ─┐
+             └─ No / Explore                        │
+       → [3] EpisodicMemory.RetrieveTopK            │
+       → [4] LLM 쿼리 (memories + failureContext)   │
+       → [5] BeginTracking ←────────────────────────┘
+       → [6] ExecuteAutonomousAction
+       → [7] 완료 시:
+             → EpisodicMemory.AddEpisode
+             → SkillLibrary.RecordOutcome
+             → 실패 + enableRetry → ReAct 재시도 (1회)
+       → [8] ShouldReflect? → ExecuteReflection
+       → Loop
+```
+
+### Tier 1 (LLM Decision Brain)
+`AIDecisionConfigSO`가 할당되고 `useLLM=true`이면 LLM에 쿼리.
+FSM 상태, 위치, 주변 오브젝트, 최근 5개 행동, 성격 + **최근 메모리**를 프롬프트로 전송.
 confidence ≥ 0.3이면 LLM 판단 실행, 그 외 가중 랜덤 폴백.
 
-**폴백 (가중 랜덤)**: LLM 미설정 또는 실패 시 아래 가중치로 랜덤 선택.
+### Tier 2 (Memory System)
+`MemoryConfigSO`가 할당되면 4종 메모리 활성화:
+
+| Component | Purpose | Key Method |
+|-----------|---------|------------|
+| **EpisodicMemory** | 행동 이력 저장 + 점수 기반 검색 | `RetrieveTopK(contextHash)` |
+| **SkillLibrary** | 성공 패턴 캐시 (Voyager) | `Match(pattern) → ShouldUseSkill()` |
+| **ActionOutcomeTracker** | 완료/실패 추적 → 메모리 기록 | `BeginTracking() → CompleteTracking()` |
+| **ReflectionEngine** | 주기적 자기성찰 → 관찰 생성 | `ShouldReflect() → ExecuteReflection()` |
+
+**Episodic Scoring**: `recency(exp decay) × 0.4 + importance × 0.3 + relevance(context match) × 0.3`
+
+**Persistence**: `{persistentDataPath}/GolemMemory/{characterName}_memory.json`
+
+### Fallback Safety Chain
+```
+memoryConfig == null  → Tier 1 (LLM + recent actions only)
+decisionConnector == null → Tier 0 (weighted random)
+MemoryStore.Load() fail → empty memory (fresh start)
+SkillLibrary.Match() null → query LLM
+RetrieveTopK() empty → prompt에 memories 섹션 없음
+Reflection fail → swallow error, continue
+File save fail → log warning, in-memory only
+```
+
+### 폴백 (가중 랜덤)
+LLM 미설정 또는 실패 시 아래 가중치로 랜덤 선택.
 
 | Action | Default Weight | ActionId | Description |
 |--------|---------------|----------|-------------|
@@ -455,7 +510,7 @@ Unity Profiler 마커:
 | 7. Multi-Channel Behavior | Not started | 상체/하체 분리, 걸으면서 제스처 |
 | 8. Animation Rigging | Not started | IK 기반 시선/호흡 (optional) |
 | 9. LLM Decision Brain (Tier 1) | **Done** | AIDecisionConnector (Ollama/OpenAI), CoT 프롬프트, confidence 폴백 |
-| 10. Memory + Skills (Tier 2) | **Planned** | 4종 메모리, 스킬 라이브러리, ReAct 평가 루프 |
+| 10. Memory + Skills (Tier 2) | **Done** | EpisodicMemory, SkillLibrary, MemoryStore, ActionOutcomeTracker, ReflectionEngine, ReAct retry |
 
 ## Dependencies
 
@@ -477,12 +532,20 @@ Unity Profiler 마커:
 
 **사용법**: `Assets > Create > Golem > AIDecisionConfig` → Inspector에서 설정 → GolemCharacterController에 할당
 
-### Tier 2 — Memory + Skills (Phase 10)
+### Tier 2 — Memory + Skills (Phase 10) ✅ 완료
 
-1. `MemoryStore.cs` 생성 — EpisodicMemory (timestamped action log with success/failure)
-2. `SkillLibrary.cs` 생성 — Voyager 패턴 (성공한 액션 시퀀스 캐시)
-3. 프롬프트에 top-K 메모리 + 매칭 스킬 추가
-4. ReAct 평가 루프: ActionCompleted/Failed → MemoryStore 기록
+| 파일 | 역할 |
+|------|------|
+| `EpisodeEntry.cs` | Episodic Memory 데이터 모델 — timestampTicks, actionId, importance, succeeded, contextHash |
+| `SkillEntry.cs` | Skill Library 데이터 모델 — situationPattern, successRate, useCount |
+| `MemoryConfigSO.cs` | ScriptableObject — episodic/skill/reflection/persistence/ReAct 설정 |
+| `EpisodicMemory.cs` | 점수 기반 검색 (recency×0.4 + importance×0.3 + relevance×0.3), FIFO eviction |
+| `SkillLibrary.cs` | Voyager 패턴 — 상황 패턴 매칭, 성공률 기반 캐시, exploration rate, pruning |
+| `MemoryStore.cs` | 파사드 — EpisodicMemory + SkillLibrary + JSON 영속화 |
+| `ActionOutcomeTracker.cs` | Agent_ActionCompleted/Failed 구독 → 에피소드 + 스킬 기록 |
+| `ReflectionEngine.cs` | N 액션마다 자기성찰 → 추상 관찰 생성 → 에피소드에 저장 |
+
+**사용법**: `Assets > Create > Golem > MemoryConfig` → Inspector에서 설정 → GolemCharacterController에 할당
 
 ### Tier 3 — Self-Improvement (Future)
 
