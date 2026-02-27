@@ -174,17 +174,39 @@ This is the **original** paper that proved LLM-based autonomous agents work for 
 
 ---
 
-## 6. Comparison Matrix
+## 6. AgentSociety — Large-Scale Autonomous Agent Simulation (Tsinghua, 2025)
 
-| Dimension | Park 2023 | Voyager 2023 | Project Sid 2024 | SIMA 2 2025 | Surveys 2024-25 |
-|-----------|-----------|-------------|-----------------|-------------|--------------|
-| **Decision Model** | Plan→Act | Curriculum→Act→Verify | PIANO | Perceive→Plan→Act→Evaluate→Adapt | CoT/ReAct/ToT |
-| **Memory** | Stream (single type) | Skill Library | Social + Episodic | Multimodal context | 4 types classified |
-| **Self-Improvement** | Reflection only | Self-verification | Emergent norms | Evaluate-Adapt loop | Reflexion pattern |
-| **Scale** | 25 agents | 1 agent | 1000 agents | 1 agent | N/A (survey) |
-| **Domain** | 2D town sim | Minecraft | Minecraft | 3D environments | General |
-| **Action Space** | Discrete (text) | Discrete (code) | Discrete (text) | Discrete + continuous | Varies |
-| **Golem Tier** | T1+T2 foundation | T2 skills | Future (multi-agent) | T1 confidence, T3 self-improve | T1 CoT, T2 memory (2024-2025) |
+**Source**: Piao et al. (2025). *AgentSociety: Large-Scale Simulation of LLM-Driven Generative Agents Advances Understanding of Human Behaviors and Society*. arXiv:2502.08691.
+
+### Key Contributions
+
+| Concept | Description | Golem Relevance |
+|---------|-------------|-----------------|
+| **Mind-Behavior Coupling** | Emotions → Needs → Cognition → Action (심리학 기반) | Tier 2 personality-driven decision model |
+| **Autonomous Daily Life** | 10,000+ 에이전트가 자율적으로 이동, 소비, 사회 활동 | Park 2023의 자율 행동을 대규모로 검증 |
+| **Maslow's Hierarchy** | 에이전트의 욕구 계층이 행동 동기 결정 | Future: need-based decision weighting |
+| **5M Interactions** | 에이전트 간 + 에이전트-환경 간 대규모 상호작용 | Architecture validation at scale |
+
+### Golem Application
+
+- **Design validation**: 자율 행동 선택이 10,000 에이전트 규모에서도 작동함을 확인
+- **Tier 2**: Mind-Behavior Coupling 패턴 — personality(semantic memory) → action decision 연결
+- **Future**: 욕구 기반 행동 우선순위 (배고프면 카페, 피곤하면 앉기)
+
+---
+
+## 7. Comparison Matrix
+
+| Dimension | Park 2023 | Voyager 2023 | Project Sid 2024 | SIMA 2 2025 | AgentSociety 2025 | Surveys 2024-25 |
+|-----------|-----------|-------------|-----------------|-------------|-------------------|--------------|
+| **Decision Model** | Plan→Act | Curriculum→Act→Verify | PIANO | Perceive→Plan→Act→Evaluate→Adapt | Mind→Behavior Coupling | CoT/ReAct/ToT |
+| **Memory** | Stream (single type) | Skill Library | Social + Episodic | Multimodal context | Emotions+Needs+Cognition | 4 types classified |
+| **Self-Improvement** | Reflection only | Self-verification | Emergent norms | Evaluate-Adapt loop | Need-driven evolution | Reflexion pattern |
+| **Scale** | 25 agents | 1 agent | 1000 agents | 1 agent | 10,000+ agents | N/A (survey) |
+| **Domain** | 2D town sim | Minecraft | Minecraft | 3D environments | Urban simulation | General |
+| **Action Space** | Discrete (text) | Discrete (code) | Discrete (text) | Discrete + continuous | Discrete (daily life) | Varies |
+| **Autonomous?** | **Yes** | No (goal-given) | **Yes** | No (instruction) | **Yes** | Varies |
+| **Golem Tier** | T1+T2 foundation | T2 skills | Future (multi-agent) | T1 confidence, T3 self-improve | T2 mind-behavior | T1 CoT, T2 memory |
 
 ---
 

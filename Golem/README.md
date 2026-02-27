@@ -27,6 +27,7 @@ AI 서버(WebSocket)가 보내는 명령으로 3D 캐릭터가 자연스럽게 �
 | 6 | [Wang et al. — *Autonomous Agent Survey*](https://arxiv.org/abs/2308.11432) | 2024 | **추론 패턴**: CoT, ReAct, Reflexion |
 | 7 | [Sumers et al. — *CoALA*](https://arxiv.org/abs/2309.02427) | 2024 | **인지 아키텍처 프레임워크**: 모듈형 메모리 + 액션 공간 |
 | 8 | Brohan et al. — *RT-2* | 2023 | VLA 방식 **기각 근거** (연속 모터 제어 ≠ 이산 행동 선택) |
+| 9 | [Piao et al. — *AgentSociety*](https://arxiv.org/abs/2502.08691) | 2025 | **10,000 에이전트 자율 행동**: Mind-Behavior Coupling, 대규모 자율 검증 |
 
 ## Architecture Overview
 

@@ -25,6 +25,7 @@
 - Project Sid 2024 (multi-agent scalability validation)
 - SIMA 2 2025 (confidence scoring, self-improvement loop)
 - Agentic Architecture Surveys 2024-2025 (4-type memory, CoT/ReAct reasoning)
+- AgentSociety 2025 (10,000 에이전트 자율 행동, mind-behavior coupling)
 
 ---
 
@@ -401,6 +402,7 @@ public class SkillLibrary
 6. Wang et al. (2024). *A Survey on Large Language Model based Autonomous Agents*. arXiv:2308.11432v2.
 7. Sumers et al. (2024). *Cognitive Architectures for Language Agents*. arXiv:2309.02427.
 8. Brohan et al. (2023). *RT-2: Vision-Language-Action Models*. (rejected for this project — wrong domain)
+9. Piao et al. (2025). *AgentSociety: Large-Scale Simulation of LLM-Driven Generative Agents*. arXiv:2502.08691.
 
 ---
 
