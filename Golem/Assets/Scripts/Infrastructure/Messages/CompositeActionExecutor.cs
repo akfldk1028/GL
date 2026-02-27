@@ -58,17 +58,19 @@ public class CompositeActionExecutor : MonoBehaviour
         {
             var sub = actions[i];
             bool completed = false;
+            bool dispatched = false;
 
             // Resolve the ActionId for correlation matching
             var registry = Managers.Registry;
             var expectedActionId = registry != null ? registry.MapToActionId(sub.Type) : ActionId.None;
 
-            // Subscribe to ActionCompleted — only match if SourceAction correlates
+            // Subscribe to ActionCompleted — only match AFTER dispatch to avoid stale completions
             IDisposable completionSub = Managers.Subscribe(ActionId.Agent_ActionCompleted, (ActionMessage m) =>
             {
+                if (!dispatched) return;
+
                 if (m.TryGetPayload<ActionLifecyclePayload>(out var lifecycle))
                 {
-                    // Match by ActionId or by ActionName string
                     if (lifecycle.SourceAction == expectedActionId ||
                         string.Equals(lifecycle.ActionName, sub.Type, System.StringComparison.OrdinalIgnoreCase))
                     {
@@ -77,12 +79,12 @@ public class CompositeActionExecutor : MonoBehaviour
                 }
                 else
                 {
-                    // No payload — accept any completion (backward compat)
                     completed = true;
                 }
             });
 
             DispatchSubAction(sub);
+            dispatched = true;
             Debug.Log($"[CompositeActionExecutor] Sequence step {i + 1}/{actions.Count}: {sub.Type}");
 
             // Wait for completion or timeout (30 seconds max per step)
@@ -97,7 +99,14 @@ public class CompositeActionExecutor : MonoBehaviour
 
             if (!completed)
             {
-                Debug.LogWarning($"[CompositeActionExecutor] Sequence step {i + 1} timed out: {sub.Type}");
+                Debug.LogWarning($"[CompositeActionExecutor] Sequence step {i + 1} timed out: {sub.Type}. Aborting sequence.");
+                Managers.PublishAction(ActionId.Agent_ActionFailed, new ActionLifecyclePayload
+                {
+                    SourceAction = expectedActionId,
+                    ActionName = sub.Type,
+                    Success = false
+                });
+                yield break;
             }
         }
 

@@ -213,7 +213,7 @@ namespace Golem.Character.FSM
                 {
                     SetupInteraction(chair, CharacterStateId.Sitting, true);
                     _fsm.ForceTransition(CharacterStateId.SitTransition);
-                    StartMoveWatch(ActionId.Character_SitAtChair, "sitAtChair");
+                    // Completion handled by CompletionTracker: SitTransition→Sitting
                 }
             }
         }
@@ -260,7 +260,7 @@ namespace Golem.Character.FSM
             {
                 SetupInteraction(chair, CharacterStateId.Leaning, true);
                 _fsm.ForceTransition(CharacterStateId.Arriving);
-                StartMoveWatch(ActionId.Character_Lean, "lean");
+                // Completion handled by CompletionTracker: Arriving→Leaning
             }
         }
 
@@ -272,7 +272,7 @@ namespace Golem.Character.FSM
             {
                 SetupInteraction(ad, CharacterStateId.Looking);
                 _fsm.ForceTransition(CharacterStateId.Arriving);
-                StartMoveWatch(ActionId.Character_ExamineMenu, "examineMenu");
+                // Completion handled by CompletionTracker: Arriving→Looking
             }
         }
 
@@ -301,7 +301,7 @@ namespace Golem.Character.FSM
             {
                 SetupInteraction(arcade, CharacterStateId.PlayingArcade, true);
                 _fsm.ForceTransition(CharacterStateId.Arriving);
-                StartMoveWatch(ActionId.Character_PlayArcade, "playArcade");
+                // Completion handled by CompletionTracker: Arriving→PlayingArcade
             }
         }
 
@@ -313,7 +313,7 @@ namespace Golem.Character.FSM
             {
                 SetupInteraction(claw, CharacterStateId.PlayingClaw, true);
                 _fsm.ForceTransition(CharacterStateId.Arriving);
-                StartMoveWatch(ActionId.Character_PlayClaw, "playClaw");
+                // Completion handled by CompletionTracker: Arriving→PlayingClaw
             }
         }
     }

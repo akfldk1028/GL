@@ -27,5 +27,12 @@ namespace Golem.Character.Autonomous
         [Header("Sit Duration")]
         public float sitDurationMin = 10f;
         public float sitDurationMax = 30f;
+
+        private void OnValidate()
+        {
+            float sum = wanderWeight + lookAroundWeight + sitWeight + gestureWeight + playGameWeight;
+            if (Mathf.Abs(sum - 1f) > 0.01f)
+                Debug.LogWarning($"[IdleSchedulerConfig] Behavior weights sum to {sum:F2}, expected 1.0");
+        }
     }
 }

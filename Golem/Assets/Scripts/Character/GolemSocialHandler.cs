@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using Golem.Infrastructure.Messages;
 using UnityEngine;
@@ -40,6 +41,7 @@ public class GolemSocialHandler : MonoBehaviour
         if (animator == null) return;
         animator.SetTrigger("Greet");
         Debug.Log("[GolemSocialHandler] Greet");
+        StartCoroutine(DelayedCompletion(ActionId.Social_Greet, "greet", 2f));
     }
 
     private void OnWave(ActionMessage msg)
@@ -47,6 +49,7 @@ public class GolemSocialHandler : MonoBehaviour
         if (animator == null) return;
         animator.SetTrigger("Wave");
         Debug.Log("[GolemSocialHandler] Wave");
+        StartCoroutine(DelayedCompletion(ActionId.Social_Wave, "wave", 2f));
     }
 
     private void OnNod(ActionMessage msg)
@@ -54,6 +57,7 @@ public class GolemSocialHandler : MonoBehaviour
         if (animator == null) return;
         animator.SetTrigger("Nod");
         Debug.Log("[GolemSocialHandler] Nod");
+        StartCoroutine(DelayedCompletion(ActionId.Social_Nod, "nod", 1.5f));
     }
 
     private void OnHeadShake(ActionMessage msg)
@@ -61,6 +65,7 @@ public class GolemSocialHandler : MonoBehaviour
         if (animator == null) return;
         animator.SetTrigger("HeadShake");
         Debug.Log("[GolemSocialHandler] HeadShake");
+        StartCoroutine(DelayedCompletion(ActionId.Social_HeadShake, "headShake", 1.5f));
     }
 
     private void OnPoint(ActionMessage msg)
@@ -87,6 +92,18 @@ public class GolemSocialHandler : MonoBehaviour
 
         animator.SetTrigger("Point");
         Debug.Log("[GolemSocialHandler] Point");
+        StartCoroutine(DelayedCompletion(ActionId.Social_Point, "point", 2f));
+    }
+
+    private IEnumerator DelayedCompletion(ActionId source, string name, float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        Managers.PublishAction(ActionId.Agent_ActionCompleted, new ActionLifecyclePayload
+        {
+            SourceAction = source,
+            ActionName = name,
+            Success = true
+        });
     }
 
     private Transform FindTransformByNameContains(string namePart)

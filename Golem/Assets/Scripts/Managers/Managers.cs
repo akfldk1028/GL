@@ -5,7 +5,7 @@ using UnityEngine;
 
 /// <summary>
 /// Singleton service locator providing global access to manager systems.
-/// Owns ActionMessageBus, ActionDispatcher, StateMachine, and ActionTypeRegistry.
+/// Owns ActionMessageBus, StateMachine, and ActionTypeRegistry.
 /// </summary>
 public class Managers : MonoBehaviour
 {
@@ -14,7 +14,6 @@ public class Managers : MonoBehaviour
 
     // ── Sub-systems ────────────────────────────────────────────
     private ActionMessageBus _actionBus;
-    private ActionDispatcher _actionDispatcher;
     private StateMachine _stateMachine;
     private ActionTypeRegistry _actionTypeRegistry;
     private AgentManager _agent;
@@ -44,7 +43,6 @@ public class Managers : MonoBehaviour
     }
 
     public static ActionMessageBus ActionBus => Instance?._actionBus;
-    public static ActionDispatcher Dispatcher => Instance?._actionDispatcher;
     public static StateMachine State => Instance?._stateMachine;
     public static ActionTypeRegistry Registry => Instance?._actionTypeRegistry;
     public static AgentManager Agent => Instance?._agent;
@@ -78,7 +76,6 @@ public class Managers : MonoBehaviour
         if (m == null) return;
 
         m._actionBus = new ActionMessageBus();
-        m._actionDispatcher = new ActionDispatcher(m._actionBus);
         m._stateMachine = new StateMachine(m._actionBus);
         m._actionTypeRegistry = new ActionTypeRegistry();
         m._agent = new AgentManager();
@@ -144,7 +141,6 @@ public class Managers : MonoBehaviour
     {
         if (_instance == this)
         {
-            _actionDispatcher?.Dispose();
             _stateMachine?.Dispose();
             _actionBus?.Dispose();
             _applicationIsQuitting = true;

@@ -25,14 +25,32 @@ namespace Golem.Character.FSM
 
         private void OnStateChanged(CharacterStateId previous, CharacterStateId current)
         {
-            // Arriving → interaction state completion is handled by ArrivingState itself
-            // SitTransition → Sitting is a natural flow, completion when seated
-            // StandTransition → Idle/Walking completion when stand animation done
-
-            // Publish completion for specific transitions that indicate action end
             switch (previous)
             {
+                // Arriving → interaction state = character reached destination and entered interaction
+                case CharacterStateId.Arriving when current == CharacterStateId.Looking:
+                    PublishCompleted(ActionId.Character_ExamineMenu, "examineMenu");
+                    break;
+                case CharacterStateId.Arriving when current == CharacterStateId.Leaning:
+                    PublishCompleted(ActionId.Character_Lean, "lean");
+                    break;
+                case CharacterStateId.Arriving when current == CharacterStateId.PlayingArcade:
+                    PublishCompleted(ActionId.Character_PlayArcade, "playArcade");
+                    break;
+                case CharacterStateId.Arriving when current == CharacterStateId.PlayingClaw:
+                    PublishCompleted(ActionId.Character_PlayClaw, "playClaw");
+                    break;
+
+                // SitTransition → Sitting = sit animation finished
+                case CharacterStateId.SitTransition when current == CharacterStateId.Sitting:
+                    PublishCompleted(ActionId.Character_SitAtChair, "sitAtChair");
+                    break;
+
+                // StandTransition → Idle or Walking = stand animation done
                 case CharacterStateId.StandTransition when current == CharacterStateId.Idle:
+                    PublishCompleted(ActionId.Character_StandUp, "standUp");
+                    break;
+                case CharacterStateId.StandTransition when current == CharacterStateId.Walking:
                     PublishCompleted(ActionId.Character_StandUp, "standUp");
                     break;
             }

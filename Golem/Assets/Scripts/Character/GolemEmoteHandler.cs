@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using Golem.Infrastructure.Messages;
 using UnityEngine;
@@ -51,6 +52,8 @@ public class GolemEmoteHandler : MonoBehaviour
             {
                 animator.SetTrigger(payload.AnimationName);
             }
+            float duration = payload.AnimationDuration > 0f ? payload.AnimationDuration : 2f;
+            StartCoroutine(DelayedCompletion(ActionId.Agent_AnimatedEmote, "animatedEmote", duration));
         }
     }
 
@@ -59,7 +62,24 @@ public class GolemEmoteHandler : MonoBehaviour
         if (msg.TryGetPayload<FacialExpressionPayload>(out var payload))
         {
             Debug.Log($"[GolemEmoteHandler] Facial expression: {payload.Expression} (intensity: {payload.Intensity})");
-            // Facial expression logic - can be extended to drive blend shapes
         }
+        // Facial expressions are instant — publish completion immediately
+        Managers.PublishAction(ActionId.Agent_ActionCompleted, new ActionLifecyclePayload
+        {
+            SourceAction = ActionId.Agent_FacialExpression,
+            ActionName = "facialExpression",
+            Success = true
+        });
+    }
+
+    private IEnumerator DelayedCompletion(ActionId source, string name, float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        Managers.PublishAction(ActionId.Agent_ActionCompleted, new ActionLifecyclePayload
+        {
+            SourceAction = source,
+            ActionName = name,
+            Success = true
+        });
     }
 }

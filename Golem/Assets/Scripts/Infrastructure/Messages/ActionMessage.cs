@@ -11,23 +11,6 @@ namespace Golem.Infrastructure.Messages
     }
 
     /// <summary>
-    /// Interface for command pattern action handlers
-    /// </summary>
-    public interface IAction
-    {
-        /// <summary>
-        /// Gets the ActionId this handler responds to
-        /// </summary>
-        ActionId Id { get; }
-
-        /// <summary>
-        /// Executes the action with the given message
-        /// </summary>
-        /// <param name="message">The action message containing the payload</param>
-        void Execute(ActionMessage message);
-    }
-
-    /// <summary>
     /// Immutable message structure containing an ActionId and optional typed payload
     /// Provides type-safe payload extraction via TryGetPayload()
     /// </summary>

@@ -56,7 +56,6 @@ namespace Golem.Infrastructure.Messages
         Character_RunTo         = 402,
         Character_Stop          = 403,
         Character_TurnTo        = 404,
-        Character_Jump          = 405,
 
         // ── POSTURE (450-499) ── VirtualHome SIT/STANDUP + BML ────
         Character_SitAtChair    = 450,

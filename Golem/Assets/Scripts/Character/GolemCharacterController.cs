@@ -24,6 +24,7 @@ public class GolemCharacterController : MonoBehaviour
 
     [Header("Autonomous")]
     [SerializeField] private Golem.Character.Autonomous.IdleSchedulerConfigSO idleSchedulerConfig;
+    [SerializeField] private Golem.Character.Autonomous.AIDecisionConfigSO aiDecisionConfig;
 
     private NavMeshAgent _navAgent;
     private CharacterBehaviorFSM _fsm;
@@ -91,6 +92,8 @@ public class GolemCharacterController : MonoBehaviour
         if (idleSchedulerConfig != null)
         {
             _idleScheduler = new Golem.Character.Autonomous.IdleScheduler(_fsm, idleSchedulerConfig, this, transform);
+            if (aiDecisionConfig != null)
+                _idleScheduler.SetDecisionConnector(aiDecisionConfig);
             _router.SetIdleScheduler(_idleScheduler);
             _idleScheduler.Start();
         }
@@ -121,16 +124,21 @@ public class GolemCharacterController : MonoBehaviour
     private void OnChangeCameraAngle(ActionMessage msg)
     {
         if (cameraStateMachine == null) return;
+        bool success = false;
         if (msg.TryGetPayload<ChangeCameraAnglePayload>(out var p))
         {
             var stateSO = Resources.Load<CameraStateSO>($"CameraStates/{p.Angle}");
-            if (stateSO != null) cameraStateMachine.ChangeState(stateSO);
+            if (stateSO != null)
+            {
+                cameraStateMachine.ChangeState(stateSO);
+                success = true;
+            }
         }
         Managers.PublishAction(ActionId.Agent_ActionCompleted, new ActionLifecyclePayload
         {
             SourceAction = ActionId.Camera_ChangeAngle,
             ActionName = "changeCameraAngle",
-            Success = true
+            Success = success
         });
     }
 

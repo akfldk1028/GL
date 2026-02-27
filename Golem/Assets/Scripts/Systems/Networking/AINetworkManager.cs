@@ -144,11 +144,22 @@ public class AINetworkManager : MonoBehaviour
         });
     }
 
+    private static ActionId BridgeActionType(string actionType)
+    {
+        if (string.IsNullOrEmpty(actionType)) return ActionId.None;
+        var lower = actionType.ToLower();
+        if (lower == "gesture") return ActionId.Social_Greet;
+        if (lower == "gazeat" || lower == "gaze_at") return ActionId.Character_LookAt;
+        return ActionId.None;
+    }
+
     private void HandleCharacterAction(CFConnector.CharacterActionData data)
     {
         if (data == null || data.action == null) return;
 
         string actionType = data.action.type ?? "";
+        if (string.IsNullOrEmpty(actionType)) return;
+
         var parameters = data.action.parameters;
         var registry = Managers.Registry;
 
@@ -160,15 +171,16 @@ public class AINetworkManager : MonoBehaviour
 
         var actionId = registry.MapToActionId(actionType);
 
+        // Bridge unmapped action types to known ActionIds
         if (actionId == ActionId.None)
         {
-            Debug.LogWarning($"[AINetworkManager] Unknown action type: {actionType}");
-            Managers.PublishAction(ActionId.None, new CharacterActionPayload
+            actionId = BridgeActionType(actionType);
+            if (actionId == ActionId.None)
             {
-                ActionType = actionType,
-                Parameters = parameters
-            });
-            return;
+                Debug.LogWarning($"[AINetworkManager] Unknown action type: {actionType} — ignored.");
+                return;
+            }
+            Debug.Log($"[AINetworkManager] Bridged action type: {actionType} → {actionId}");
         }
 
         var payload = registry.CreatePayload(actionId, parameters);

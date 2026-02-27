@@ -170,7 +170,9 @@ Assets/Scripts/                              ~70 files
 │   │
 │   └── Autonomous/                          ── 자율 행동 ──
 │       ├── AutonomousAction.cs              ActionId + Payload + ExpectedDuration
-│       ├── IdleScheduler.cs                 가중 랜덤 자율 행동 스케줄러
+│       ├── AIDecisionConfigSO.cs            LLM 엔드포인트 설정 (Tier 1)
+│       ├── AIDecisionConnector.cs           HTTP POST → LLM 쿼리 + 응답 파싱 (Tier 1)
+│       ├── IdleScheduler.cs                 자율 행동 스케줄러 (LLM + 가중 랜덤 폴백)
 │       └── IdleSchedulerConfigSO.cs         ScriptableObject 설정
 │
 ├── Infrastructure/
@@ -322,10 +324,15 @@ CharacterCommandRouter가 ActionBus에서 13개 명령을 구독하여 FSM 전�
 **완료 보고**: 각 명령 완료 시 `Agent_ActionCompleted` 발행.
 StandUp(Sitting→StandTransition 경로)만 CompletionTracker가 애니메이션 완료를 감지하여 발행.
 
-## Autonomous Behavior (IdleScheduler)
+## Autonomous Behavior (IdleScheduler + AIDecisionConnector)
 
 AI 서버 명령 없이 Idle 상태가 N초 지속되면 자율 행동 시작.
-가중치는 총합 기준으로 정규화되어 적용.
+
+**Tier 1 (LLM 판단)**: `AIDecisionConfigSO`가 할당되고 `useLLM=true`이면 LLM에 쿼리.
+FSM 상태, 위치, 주변 오브젝트, 최근 5개 행동, 성격을 프롬프트로 전송.
+confidence ≥ 0.3이면 LLM 판단 실행, 그 외 가중 랜덤 폴백.
+
+**폴백 (가중 랜덤)**: LLM 미설정 또는 실패 시 아래 가중치로 랜덤 선택.
 
 | Action | Default Weight | ActionId | Description |
 |--------|---------------|----------|-------------|
@@ -447,7 +454,7 @@ Unity Profiler 마커:
 | 6. Debug & Polish | **Done** | F11/F12 overlays, ProfilerMarker |
 | 7. Multi-Channel Behavior | Not started | 상체/하체 분리, 걸으면서 제스처 |
 | 8. Animation Rigging | Not started | IK 기반 시선/호흡 (optional) |
-| 9. LLM Decision Brain (Tier 1) | **Planned** | IdleScheduler → LLM 쿼리, AIDecisionConnector, CoT 프롬프트 |
+| 9. LLM Decision Brain (Tier 1) | **Done** | AIDecisionConnector (Ollama/OpenAI), CoT 프롬프트, confidence 폴백 |
 | 10. Memory + Skills (Tier 2) | **Planned** | 4종 메모리, 스킬 라이브러리, ReAct 평가 루프 |
 
 ## Dependencies
@@ -460,12 +467,15 @@ Unity Profiler 마커:
 
 ## Next Steps
 
-### Tier 1 — LLM Decision Brain (Phase 9)
+### Tier 1 — LLM Decision Brain (Phase 9) ✅ 완료
 
-1. `AIDecisionConnector.cs` 생성 — HTTP POST to LLM endpoint (Ollama / OpenAI compatible)
-2. `IdleScheduler.PickRandomAction()` → `AIDecisionConnector.QueryAsync()` 교체
-3. CoT 프롬프트 템플릿 구현 (confidence 점수 + reasoning 필드)
-4. 폴백 전략: HTTP 실패 → weighted random, confidence < 0.3 → random
+| 파일 | 역할 |
+|------|------|
+| `AIDecisionConfigSO.cs` | ScriptableObject — endpoint URL, model, personality, 스캔 반경 |
+| `AIDecisionConnector.cs` | HTTP POST (Ollama/OpenAI), 프롬프트 빌더, JSON 파서, ActionId 매핑 |
+| `IdleScheduler.cs` | LLM 쿼리 경로 + 가중 랜덤 폴백 + 최근 행동 5개 추적 |
+
+**사용법**: `Assets > Create > Golem > AIDecisionConfig` → Inspector에서 설정 → GolemCharacterController에 할당
 
 ### Tier 2 — Memory + Skills (Phase 10)
 

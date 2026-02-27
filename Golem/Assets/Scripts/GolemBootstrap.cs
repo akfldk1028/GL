@@ -5,7 +5,7 @@ using UnityEngine;
 /// <summary>
 /// Entry point for the Golem AI Agent system.
 /// Initializes all infrastructure in the correct order:
-/// 1. Managers (ActionBus, ActionDispatcher, StateMachine, ResourceManager, PoolManager, DataManager)
+/// 1. Managers (ActionBus, StateMachine, ResourceManager, PoolManager, DataManager)
 /// 2. AINetworkManager (CFConnector -> ActionBus bridge)
 /// 3. Debug Overlay (development builds only)
 /// 4. State Machine initial states
