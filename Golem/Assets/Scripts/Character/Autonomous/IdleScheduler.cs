@@ -18,6 +18,12 @@ namespace Golem.Character.Autonomous
         private AIDecisionConnector _decisionConnector;
         private AIDecisionConfigSO _decisionConfig;
 
+        // Tier 2: Memory system (null = Tier 1 only)
+        private MemoryStore _memoryStore;
+        private ActionOutcomeTracker _outcomeTracker;
+        private ReflectionEngine _reflectionEngine;
+        private MemoryConfigSO _memoryConfig;
+
         private Coroutine _schedulerCoroutine;
         private Coroutine _autonomousCoroutine;
         private bool _isRunning;
@@ -27,6 +33,11 @@ namespace Golem.Character.Autonomous
         // Recent action tracking for LLM context (last 5)
         private readonly List<string> _recentActions = new List<string>();
         private const int MaxRecentActions = 5;
+
+        // Tier 2: current context for outcome tracking
+        private string _currentContextHash;
+        private DecisionResult _currentDecision;
+        private bool _retryPending;
 
         public bool IsPerformingAutonomousAction => _isPerformingAutonomousAction;
 
@@ -60,6 +71,29 @@ namespace Golem.Character.Autonomous
             }
         }
 
+        /// <summary>
+        /// Initialize the Tier 2 memory system. If not called, operates as Tier 1 only.
+        /// </summary>
+        public void SetMemoryStore(MemoryConfigSO memoryConfig)
+        {
+            if (memoryConfig == null) return;
+            _memoryConfig = memoryConfig;
+
+            string charName = _decisionConfig != null ? _decisionConfig.characterName : "Golem";
+            _memoryStore = new MemoryStore(memoryConfig, charName);
+            _memoryStore.Load();
+
+            _outcomeTracker = new ActionOutcomeTracker(_memoryStore, memoryConfig);
+            _outcomeTracker.OnOutcomeRecorded += OnOutcomeRecorded;
+
+            if (_decisionConnector != null)
+            {
+                _reflectionEngine = new ReflectionEngine(memoryConfig, _memoryStore, _decisionConnector, _decisionConfig, _runner);
+            }
+
+            Debug.Log($"[IdleScheduler] Tier 2 memory enabled (episodes={_memoryStore.Episodic.Episodes.Count}, skills={_memoryStore.Skills.Skills.Count})");
+        }
+
         public void Start()
         {
             if (_isRunning) return;
@@ -76,6 +110,8 @@ namespace Golem.Character.Autonomous
                 _runner.StopCoroutine(_schedulerCoroutine);
                 _schedulerCoroutine = null;
             }
+            _outcomeTracker?.Dispose();
+            _memoryStore?.Dispose();
         }
 
         public void CancelCurrentAction()
@@ -112,7 +148,7 @@ namespace Golem.Character.Autonomous
                 if (!_fsm.IsInState(CharacterStateId.Idle))
                     continue;
 
-                // Tier 1: Try LLM decision, fallback to weighted random
+                // Tier 1+2: Try LLM decision (with memory), fallback to weighted random
                 if (_decisionConnector != null && _decisionConfig != null && _decisionConfig.useLLM)
                 {
                     yield return _runner.StartCoroutine(PickActionViaLLM());
@@ -127,41 +163,163 @@ namespace Golem.Character.Autonomous
         }
 
         /// <summary>
-        /// Query LLM for action decision. Falls back to weighted random on failure.
+        /// Query LLM for action decision with Tier 2 memory integration.
+        /// Falls back to weighted random on failure.
         /// </summary>
-        private IEnumerator PickActionViaLLM()
+        private IEnumerator PickActionViaLLM(string failureContext = null)
         {
+            // Step 1: Build context hash
+            string contextHash = BuildCurrentContextHash();
+            _currentContextHash = contextHash;
+
+            // Step 2: Check skill library for cached action
+            if (_memoryStore != null && failureContext == null)
+            {
+                var skill = _memoryStore.Skills.Match(contextHash);
+                if (skill != null && _memoryStore.Skills.ShouldUseSkill(skill))
+                {
+                    Debug.Log($"[IdleScheduler] Using cached skill: {skill.actionName} (rate={skill.SuccessRate:F2}, uses={skill.useCount})");
+                    var skillAction = CreateActionFromSkill(skill);
+                    if (skillAction != null && _fsm.IsInState(CharacterStateId.Idle))
+                    {
+                        _currentDecision = new DecisionResult
+                        {
+                            Action = (ActionId)skill.recommendedActionId,
+                            ActionName = skill.actionName,
+                            Target = skill.target,
+                            Thought = "cached skill",
+                            Confidence = skill.SuccessRate,
+                            Reasoning = $"Skill cache: {skill.situationPattern}"
+                        };
+                        BeginTrackingAndExecute(skillAction);
+                        yield break;
+                    }
+                }
+            }
+
+            // Step 3: Retrieve episodic memories for LLM context
+            List<EpisodeEntry> memories = null;
+            if (_memoryStore != null)
+            {
+                memories = _memoryStore.Episodic.RetrieveTopK(contextHash);
+                if (memories.Count > 0)
+                    Debug.Log($"[IdleScheduler] Retrieved {memories.Count} memories for LLM context");
+            }
+
+            // Step 4: Query LLM with memories
             DecisionResult result = null;
             yield return _runner.StartCoroutine(
-                _decisionConnector.QueryDecision(_recentActions, r => result = r));
+                _decisionConnector.QueryDecision(_recentActions, r => result = r, memories, failureContext));
 
             AutonomousAction action;
 
             if (result == null)
             {
-                // HTTP failure or parse error → fallback
                 Debug.Log("[IdleScheduler] LLM failed, falling back to weighted random");
                 action = PickRandomAction();
+                _currentDecision = null;
             }
             else if (result.Confidence < _decisionConfig.minConfidence)
             {
-                // Low confidence → fallback
                 Debug.Log($"[IdleScheduler] LLM confidence too low ({result.Confidence:F2}), falling back to weighted random");
                 action = PickRandomAction();
+                _currentDecision = null;
             }
             else
             {
-                // LLM decision accepted
                 action = CreateActionFromDecision(result);
                 if (action == null)
                 {
                     Debug.LogWarning($"[IdleScheduler] Could not create action from LLM decision: {result.ActionName}");
                     action = PickRandomAction();
+                    _currentDecision = null;
+                }
+                else
+                {
+                    _currentDecision = result;
                 }
             }
 
             if (action != null && _fsm.IsInState(CharacterStateId.Idle))
-                _autonomousCoroutine = _runner.StartCoroutine(ExecuteAutonomousAction(action));
+                BeginTrackingAndExecute(action);
+        }
+
+        private void BeginTrackingAndExecute(AutonomousAction action)
+        {
+            // Begin outcome tracking (Tier 2)
+            if (_outcomeTracker != null && _currentContextHash != null)
+            {
+                _outcomeTracker.BeginTracking(action, _currentDecision, _currentContextHash, _characterTransform.position);
+            }
+
+            _autonomousCoroutine = _runner.StartCoroutine(ExecuteAutonomousAction(action));
+        }
+
+        private void OnOutcomeRecorded(bool succeeded)
+        {
+            // Track for reflection engine
+            _reflectionEngine?.TrackAction(_memoryStore?.Episodic.Episodes.Count > 0
+                ? _memoryStore.Episodic.Episodes[_memoryStore.Episodic.Episodes.Count - 1].importance
+                : 0.2f);
+
+            // ReAct: retry once on failure
+            if (!succeeded && _memoryConfig != null && _memoryConfig.enableFailureRetry && !_retryPending)
+            {
+                string failCtx = _currentDecision != null
+                    ? $"Your previous action '{_currentDecision.ActionName}' targeting '{_currentDecision.Target}' FAILED. Reason: {_currentDecision.Reasoning}. Choose a different action."
+                    : "Your previous action FAILED. Choose a different action.";
+                _retryPending = true;
+                _runner.StartCoroutine(RetryAfterFailure(failCtx));
+                return;
+            }
+
+            // Check reflection
+            if (_reflectionEngine != null && _reflectionEngine.ShouldReflect())
+            {
+                _runner.StartCoroutine(_reflectionEngine.ExecuteReflection());
+            }
+        }
+
+        private IEnumerator RetryAfterFailure(string failureContext)
+        {
+            // Wait for current action to finish cleanup
+            yield return null;
+            _retryPending = false;
+
+            if (!_fsm.IsInState(CharacterStateId.Idle) || _isPerformingAutonomousAction)
+                yield break;
+
+            Debug.Log("[IdleScheduler] ReAct: retrying after failure...");
+            yield return _runner.StartCoroutine(PickActionViaLLM(failureContext));
+        }
+
+        private string BuildCurrentContextHash()
+        {
+            if (_decisionConnector == null) return "unknown";
+            string fsmState = _fsm.CurrentStateId.ToString();
+            string[] nearbyTags = _decisionConnector.GetNearbyTags();
+            float gameHour = GetGameHour();
+            return EpisodicMemory.BuildContextHash(fsmState, nearbyTags, gameHour);
+        }
+
+        private float GetGameHour()
+        {
+            // 24-hour cycle based on Time.time (1 game hour = 60 real seconds by default)
+            return (Time.time / 60f) % 24f;
+        }
+
+        private AutonomousAction CreateActionFromSkill(SkillEntry skill)
+        {
+            var fakeDecision = new DecisionResult
+            {
+                Action = (ActionId)skill.recommendedActionId,
+                ActionName = skill.actionName,
+                Target = skill.target,
+                Thought = "cached skill",
+                Confidence = skill.SuccessRate,
+                Reasoning = "skill cache"
+            };
+            return CreateActionFromDecision(fakeDecision);
         }
 
         /// <summary>
@@ -172,7 +330,6 @@ namespace Golem.Character.Autonomous
             switch (decision.Action)
             {
                 case ActionId.Character_MoveToLocation:
-                    // Try to find target by name, otherwise wander randomly
                     Vector3 dest;
                     if (!string.IsNullOrEmpty(decision.Target) && decision.Target != "null")
                     {
@@ -420,6 +577,8 @@ namespace Golem.Character.Autonomous
                 yield return null;
             }
 
+            bool completed = _isPerformingAutonomousAction;
+
             if (_isPerformingAutonomousAction && _fsm.IsInState(CharacterStateId.Sitting))
             {
                 Managers.PublishAction(ActionId.Character_StandUp);
@@ -428,6 +587,10 @@ namespace Golem.Character.Autonomous
             _publishingAutonomous = false;
             _isPerformingAutonomousAction = false;
             _autonomousCoroutine = null;
+
+            // Tier 2: Complete tracking if not already handled by ActionMessage
+            if (completed)
+                _outcomeTracker?.CompleteTracking(true);
         }
     }
 }

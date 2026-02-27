@@ -25,6 +25,7 @@ public class GolemCharacterController : MonoBehaviour
     [Header("Autonomous")]
     [SerializeField] private Golem.Character.Autonomous.IdleSchedulerConfigSO idleSchedulerConfig;
     [SerializeField] private Golem.Character.Autonomous.AIDecisionConfigSO aiDecisionConfig;
+    [SerializeField] private Golem.Character.Autonomous.MemoryConfigSO memoryConfig;
 
     private NavMeshAgent _navAgent;
     private CharacterBehaviorFSM _fsm;
@@ -94,6 +95,8 @@ public class GolemCharacterController : MonoBehaviour
             _idleScheduler = new Golem.Character.Autonomous.IdleScheduler(_fsm, idleSchedulerConfig, this, transform);
             if (aiDecisionConfig != null)
                 _idleScheduler.SetDecisionConnector(aiDecisionConfig);
+            if (memoryConfig != null)
+                _idleScheduler.SetMemoryStore(memoryConfig);
             _router.SetIdleScheduler(_idleScheduler);
             _idleScheduler.Start();
         }

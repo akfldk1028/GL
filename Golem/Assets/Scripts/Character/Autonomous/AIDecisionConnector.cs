@@ -54,9 +54,13 @@ namespace Golem.Character.Autonomous
         /// Query the LLM for an action decision. Returns null on failure.
         /// Use via: _runner.StartCoroutine(connector.QueryDecision(recentActions, callback))
         /// </summary>
-        public IEnumerator QueryDecision(List<string> recentActions, Action<DecisionResult> onComplete)
+        public IEnumerator QueryDecision(
+            List<string> recentActions,
+            Action<DecisionResult> onComplete,
+            List<EpisodeEntry> memories = null,
+            string failureContext = null)
         {
-            string prompt = BuildPrompt(recentActions);
+            string prompt = BuildPrompt(recentActions, memories, failureContext);
             string requestJson = BuildRequestBody(prompt);
 
             using var request = new UnityWebRequest(_config.endpointUrl, "POST");
@@ -89,40 +93,74 @@ namespace Golem.Character.Autonomous
             onComplete?.Invoke(result);
         }
 
-        private string BuildPrompt(List<string> recentActions)
+        private string BuildPrompt(List<string> recentActions, List<EpisodeEntry> memories = null, string failureContext = null)
         {
             var pos = _characterTransform.position;
             string nearbyObjects = ScanNearbyObjects();
             string recentStr = recentActions.Count > 0 ? string.Join(", ", recentActions) : "none";
 
-            return $@"You are {_config.characterName}, a character in a virtual world.
+            var sb = new StringBuilder();
+            sb.AppendLine($"You are {_config.characterName}, a character in a virtual world.");
+            sb.AppendLine();
+            sb.AppendLine("## Current State");
+            sb.AppendLine($"- FSM state: {_fsm.CurrentStateId}");
+            sb.AppendLine($"- Position: ({pos.x:F1}, {pos.y:F1}, {pos.z:F1})");
+            sb.AppendLine($"- Nearby objects: {nearbyObjects}");
+            sb.AppendLine($"- Recent actions (last 5): {recentStr}");
 
-## Current State
-- FSM state: {_fsm.CurrentStateId}
-- Position: ({pos.x:F1}, {pos.y:F1}, {pos.z:F1})
-- Nearby objects: {nearbyObjects}
-- Recent actions (last 5): {recentStr}
+            // Tier 2: Recent Memories section
+            if (memories != null && memories.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("## Recent Memories");
+                foreach (var ep in memories)
+                {
+                    var age = System.DateTime.UtcNow - ep.Timestamp;
+                    string timeAgo;
+                    if (age.TotalMinutes < 1) timeAgo = $"{age.TotalSeconds:F0}s ago";
+                    else if (age.TotalHours < 1) timeAgo = $"{age.TotalMinutes:F0}m ago";
+                    else timeAgo = $"{age.TotalHours:F1}h ago";
 
-## Personality
-{_config.personalityJson}
+                    string status = ep.succeeded ? "" : " [FAILED]";
+                    sb.AppendLine($"- [{timeAgo}] {ep.actionName} -> {ep.target ?? "none"} ({ep.thought}){status}");
+                }
+            }
 
-## Rules
-1. Think step by step about what you want to do and why.
-2. Do NOT repeat the same action 3 times in a row.
-3. Choose actions that fit your personality and current context.
-4. If you just sat for a long time, consider standing up and walking.
+            // Failure context for ReAct retry
+            if (!string.IsNullOrEmpty(failureContext))
+            {
+                sb.AppendLine();
+                sb.AppendLine("## Previous Failure");
+                sb.AppendLine(failureContext);
+            }
 
-## Valid Actions
-Idle, MoveToLocation, TurnTo, SitAtChair, StandUp, LookAt, Lean, ExamineMenu, PlayArcade, PlayClaw, Wave
+            sb.AppendLine();
+            sb.AppendLine("## Personality");
+            sb.AppendLine(_config.personalityJson);
 
-Respond ONLY with JSON (no markdown, no explanation):
-{{
-  ""reasoning"": ""<2-3 sentences: why this action>"",
-  ""action"": ""<ActionId from valid list>"",
-  ""target"": ""<object_name or null>"",
-  ""thought"": ""<one sentence: character's inner thought>"",
-  ""confidence"": <0.0-1.0>
-}}";
+            sb.AppendLine();
+            sb.AppendLine("## Rules");
+            sb.AppendLine("1. Think step by step about what you want to do and why.");
+            sb.AppendLine("2. Do NOT repeat the same action 3 times in a row.");
+            sb.AppendLine("3. Choose actions that fit your personality and current context.");
+            sb.AppendLine("4. If you just sat for a long time, consider standing up and walking.");
+            sb.AppendLine("5. Consider your memories — avoid repeating failed actions.");
+
+            sb.AppendLine();
+            sb.AppendLine("## Valid Actions");
+            sb.AppendLine("Idle, MoveToLocation, TurnTo, SitAtChair, StandUp, LookAt, Lean, ExamineMenu, PlayArcade, PlayClaw, Wave");
+
+            sb.AppendLine();
+            sb.AppendLine("Respond ONLY with JSON (no markdown, no explanation):");
+            sb.AppendLine("{");
+            sb.AppendLine("  \"reasoning\": \"<2-3 sentences: why this action>\",");
+            sb.AppendLine("  \"action\": \"<ActionId from valid list>\",");
+            sb.AppendLine("  \"target\": \"<object_name or null>\",");
+            sb.AppendLine("  \"thought\": \"<one sentence: character's inner thought>\",");
+            sb.AppendLine("  \"confidence\": <0.0-1.0>");
+            sb.AppendLine("}");
+
+            return sb.ToString();
         }
 
         private string BuildRequestBody(string prompt)
@@ -195,6 +233,28 @@ Respond ONLY with JSON (no markdown, no explanation):
                 Debug.LogWarning($"[AIDecision] Parse error: {e.Message}");
                 return null;
             }
+        }
+
+        public string[] GetNearbyTags()
+        {
+            var found = new List<string>();
+            float radius = _config.nearbyObjectRadius;
+            Vector3 pos = _characterTransform.position;
+
+            foreach (string tag in _config.nearbyObjectTags)
+            {
+                GameObject[] objs;
+                try { objs = GameObject.FindGameObjectsWithTag(tag); } catch { continue; }
+                if (objs == null) continue;
+
+                foreach (var obj in objs)
+                {
+                    if (Vector3.Distance(obj.transform.position, pos) <= radius && !found.Contains(tag))
+                        found.Add(tag);
+                }
+            }
+
+            return found.ToArray();
         }
 
         private string ScanNearbyObjects()
