@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Golem.Infrastructure.Messages;
 using UnityEngine;
 
 namespace Golem.Character.Autonomous
@@ -10,22 +9,6 @@ namespace Golem.Character.Autonomous
     {
         private readonly List<EpisodeEntry> _episodes = new List<EpisodeEntry>();
         private readonly MemoryConfigSO _config;
-
-        private static readonly Dictionary<int, float> BaseImportance = new Dictionary<int, float>
-        {
-            { (int)ActionId.Character_Idle,           0.1f },
-            { (int)ActionId.Character_MoveToLocation, 0.2f },
-            { (int)ActionId.Character_TurnTo,         0.2f },
-            { (int)ActionId.Character_SitAtChair,     0.3f },
-            { (int)ActionId.Character_StandUp,        0.2f },
-            { (int)ActionId.Character_LookAt,         0.3f },
-            { (int)ActionId.Character_Lean,           0.3f },
-            { (int)ActionId.Character_ExamineMenu,    0.4f },
-            { (int)ActionId.Character_PlayArcade,     0.5f },
-            { (int)ActionId.Character_PlayClaw,       0.5f },
-            { (int)ActionId.Social_Wave,              0.4f },
-            { (int)ActionId.Agent_ReflectionTriggered, 1.0f },
-        };
 
         public List<EpisodeEntry> Episodes => _episodes;
 
@@ -55,7 +38,9 @@ namespace Golem.Character.Autonomous
 
         public float CalculateImportance(EpisodeEntry entry)
         {
-            float baseImp = BaseImportance.TryGetValue(entry.actionId, out float b) ? b : 0.2f;
+            // All actions start with the same base importance (no hardcoded per-action table).
+            // Differentiation comes from novelty and failure — the agent learns what matters.
+            float baseImp = _config.defaultBaseImportance;
 
             // Novelty bonus: action not seen in last 10 episodes
             float noveltyBonus = 0f;
@@ -77,14 +62,8 @@ namespace Golem.Character.Autonomous
             return Mathf.Clamp01(baseImp + noveltyBonus + failureBonus);
         }
 
-        public static string BuildContextHash(string fsmState, string[] nearbyTags, float gameHour)
+        public static string BuildContextHash(string fsmState, string[] nearbyTags)
         {
-            string timeBucket;
-            if (gameHour < 6f) timeBucket = "night";
-            else if (gameHour < 12f) timeBucket = "morning";
-            else if (gameHour < 18f) timeBucket = "afternoon";
-            else timeBucket = "evening";
-
             string sortedTags = "none";
             if (nearbyTags != null && nearbyTags.Length > 0)
             {
@@ -92,7 +71,44 @@ namespace Golem.Character.Autonomous
                 sortedTags = string.Join(",", sorted);
             }
 
-            return $"{fsmState}|{sortedTags}|{timeBucket}";
+            return $"{fsmState}|{sortedTags}";
+        }
+
+        /// <summary>
+        /// Component-based partial relevance scoring instead of binary exact match.
+        /// fsmState match = 0.5, nearbyTags overlap ratio = 0.5
+        /// </summary>
+        public static float CalculateRelevance(string hashA, string hashB)
+        {
+            if (hashA == hashB) return 1f;
+            if (string.IsNullOrEmpty(hashA) || string.IsNullOrEmpty(hashB)) return 0f;
+
+            var partsA = hashA.Split('|');
+            var partsB = hashB.Split('|');
+            if (partsA.Length < 2 || partsB.Length < 2) return 0f;
+
+            float score = 0f;
+
+            // FSM state match (0.5)
+            if (partsA[0] == partsB[0]) score += 0.5f;
+
+            // Nearby tags overlap ratio (0.5)
+            if (partsA[1] == partsB[1])
+            {
+                score += 0.5f;
+            }
+            else if (partsA[1] != "none" && partsB[1] != "none")
+            {
+                var tagsA = new HashSet<string>(partsA[1].Split(','));
+                var tagsB = new HashSet<string>(partsB[1].Split(','));
+                int union = 0;
+                int intersection = 0;
+                foreach (var t in tagsA) { union++; if (tagsB.Contains(t)) intersection++; }
+                foreach (var t in tagsB) { if (!tagsA.Contains(t)) union++; }
+                if (union > 0) score += 0.5f * intersection / union; // Jaccard similarity
+            }
+
+            return score;
         }
 
         public List<EpisodeEntry> RetrieveTopK(string currentContextHash, int k = -1)
@@ -114,8 +130,8 @@ namespace Golem.Character.Autonomous
                 // Importance: stored value
                 float importance = ep.importance;
 
-                // Relevance: contextHash match
-                float relevance = (ep.contextHash == currentContextHash) ? 1f : 0f;
+                // Relevance: component-based partial match
+                float relevance = CalculateRelevance(ep.contextHash, currentContextHash);
 
                 float score = recency * _config.recencyWeight
                             + importance * _config.importanceWeight

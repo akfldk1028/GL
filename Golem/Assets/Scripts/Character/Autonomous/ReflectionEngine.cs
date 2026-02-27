@@ -110,7 +110,7 @@ namespace Golem.Character.Autonomous
             {
                 if (kv.Value > maxCount) { maxCount = kv.Value; mostCommon = kv.Key; }
             }
-            if (mostCommon != null && maxCount >= 3)
+            if (mostCommon != null && maxCount >= _config.frequentActionThreshold)
             {
                 observations.Add($"I tend to {mostCommon} frequently ({maxCount} times recently). I should try more variety.");
             }

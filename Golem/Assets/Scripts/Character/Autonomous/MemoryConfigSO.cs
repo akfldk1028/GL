@@ -43,6 +43,14 @@ namespace Golem.Character.Autonomous
         [Tooltip("Enable JSON file persistence")]
         public bool enablePersistence = true;
 
+        [Header("Importance")]
+        [Tooltip("Default base importance for any action (novelty/failure bonuses added on top)")]
+        [Range(0f, 1f)] public float defaultBaseImportance = 0.3f;
+
+        [Header("Reflection Thresholds")]
+        [Tooltip("Minimum repetition count to generate 'too frequent' observation")]
+        public int frequentActionThreshold = 3;
+
         [Header("ReAct")]
         [Tooltip("Re-query LLM once on action failure")]
         public bool enableFailureRetry = true;

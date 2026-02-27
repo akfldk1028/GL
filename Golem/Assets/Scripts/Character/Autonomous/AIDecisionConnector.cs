@@ -148,7 +148,7 @@ namespace Golem.Character.Autonomous
 
             sb.AppendLine();
             sb.AppendLine("## Valid Actions");
-            sb.AppendLine("Idle, MoveToLocation, TurnTo, SitAtChair, StandUp, LookAt, Lean, ExamineMenu, PlayArcade, PlayClaw, Wave");
+            sb.AppendLine(string.Join(", ", ActionNameMap.Keys));
 
             sb.AppendLine();
             sb.AppendLine("Respond ONLY with JSON (no markdown, no explanation):");

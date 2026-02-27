@@ -298,14 +298,7 @@ namespace Golem.Character.Autonomous
             if (_decisionConnector == null) return "unknown";
             string fsmState = _fsm.CurrentStateId.ToString();
             string[] nearbyTags = _decisionConnector.GetNearbyTags();
-            float gameHour = GetGameHour();
-            return EpisodicMemory.BuildContextHash(fsmState, nearbyTags, gameHour);
-        }
-
-        private float GetGameHour()
-        {
-            // 24-hour cycle based on Time.time (1 game hour = 60 real seconds by default)
-            return (Time.time / 60f) % 24f;
+            return EpisodicMemory.BuildContextHash(fsmState, nearbyTags);
         }
 
         private AutonomousAction CreateActionFromSkill(SkillEntry skill)
@@ -349,24 +342,41 @@ namespace Golem.Character.Autonomous
                     };
 
                 case ActionId.Character_TurnTo:
-                    Vector3 lookPos = _characterTransform.position
-                        + Quaternion.Euler(0, Random.Range(-180f, 180f), 0) * Vector3.forward * 5f;
+                    Vector3 turnTarget = Vector3.zero;
+                    if (!string.IsNullOrEmpty(decision.Target) && decision.Target != "null")
+                    {
+                        var turnObj = InteractionSpotFinder.FindByNameContains(decision.Target);
+                        if (turnObj != null) turnTarget = turnObj.position;
+                    }
+                    // Fallback to random direction only if target not found
+                    if (turnTarget == Vector3.zero)
+                        turnTarget = _characterTransform.position
+                            + Quaternion.Euler(0, Random.Range(-180f, 180f), 0) * Vector3.forward * 5f;
                     return new AutonomousAction
                     {
                         ActionId = ActionId.Character_TurnTo,
-                        Payload = new GazePayload { Position = lookPos },
+                        Payload = new GazePayload { Position = turnTarget },
                         ExpectedDuration = 3f,
                         Description = $"LLM: turn ({decision.Thought})"
                     };
 
                 case ActionId.Character_SitAtChair:
-                    int chair = Random.Range(1, 5);
+                    int chair = 0;
+                    // Try to parse chair number from LLM target (e.g., "chair_3", "3", "chair 2")
+                    if (!string.IsNullOrEmpty(decision.Target) && decision.Target != "null")
+                    {
+                        foreach (char c in decision.Target)
+                        {
+                            if (char.IsDigit(c)) { chair = c - '0'; break; }
+                        }
+                    }
+                    if (chair <= 0) chair = Random.Range(1, 5);
                     return new AutonomousAction
                     {
                         ActionId = ActionId.Character_SitAtChair,
                         Payload = new SitAtChairPayload { ChairNumber = chair },
                         ExpectedDuration = Random.Range(_config.sitDurationMin, _config.sitDurationMax),
-                        Description = $"LLM: sit ({decision.Thought})"
+                        Description = $"LLM: sit at chair {chair} ({decision.Thought})"
                     };
 
                 case ActionId.Character_StandUp:
