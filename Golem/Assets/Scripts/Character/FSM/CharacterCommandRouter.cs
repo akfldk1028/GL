@@ -75,6 +75,18 @@ namespace Golem.Character.FSM
             });
         }
 
+        private void PublishFailed(ActionId source, string name, string error)
+        {
+            Debug.LogWarning($"[CommandRouter] Action failed: {name} — {error}");
+            Managers.PublishAction(ActionId.Agent_ActionFailed, new ActionLifecyclePayload
+            {
+                SourceAction = source,
+                ActionName = name,
+                Success = false,
+                Error = error
+            });
+        }
+
         private void StartMoveWatch(ActionId source, string name)
         {
             if (_moveCompletionCoroutine != null)
@@ -87,15 +99,33 @@ namespace Golem.Character.FSM
             yield return null;
             float elapsed = 0f;
             var nav = _stateContext.NavAgent;
+            bool arrived = false;
             while (elapsed < 60f)
             {
                 if (nav == null || !nav.enabled) break;
-                if (!nav.pathPending && nav.remainingDistance <= nav.stoppingDistance + 0.1f) break;
+                if (!nav.pathPending)
+                {
+                    // Check for invalid path
+                    if (nav.pathStatus == UnityEngine.AI.NavMeshPathStatus.PathInvalid)
+                    {
+                        _moveCompletionCoroutine = null;
+                        PublishFailed(source, name, "NavMesh path invalid — destination unreachable");
+                        yield break;
+                    }
+                    if (nav.remainingDistance <= nav.stoppingDistance + 0.1f)
+                    {
+                        arrived = true;
+                        break;
+                    }
+                }
                 elapsed += Time.deltaTime;
                 yield return null;
             }
             _moveCompletionCoroutine = null;
-            PublishCompleted(source, name);
+            if (arrived)
+                PublishCompleted(source, name);
+            else
+                PublishFailed(source, name, "Move timed out after 60s");
         }
 
         private void SetupInteraction(Transform chosen, CharacterStateId targetState, bool disableCollider = false)
@@ -215,6 +245,10 @@ namespace Golem.Character.FSM
                     _fsm.ForceTransition(CharacterStateId.SitTransition);
                     // Completion handled by CompletionTracker: SitTransition→Sitting
                 }
+                else
+                {
+                    PublishFailed(ActionId.Character_SitAtChair, "sitAtChair", $"Chair #{p.ChairNumber} not found in scene");
+                }
             }
         }
 
@@ -262,6 +296,10 @@ namespace Golem.Character.FSM
                 _fsm.ForceTransition(CharacterStateId.Arriving);
                 // Completion handled by CompletionTracker: Arriving→Leaning
             }
+            else
+            {
+                PublishFailed(ActionId.Character_Lean, "lean", "Slot machine chair not found in scene");
+            }
         }
 
         private void OnExamineMenu(ActionMessage msg)
@@ -273,6 +311,10 @@ namespace Golem.Character.FSM
                 SetupInteraction(ad, CharacterStateId.Looking);
                 _fsm.ForceTransition(CharacterStateId.Arriving);
                 // Completion handled by CompletionTracker: Arriving→Looking
+            }
+            else
+            {
+                PublishFailed(ActionId.Character_ExamineMenu, "examineMenu", "Ad display not found in scene");
             }
         }
 
@@ -303,6 +345,10 @@ namespace Golem.Character.FSM
                 _fsm.ForceTransition(CharacterStateId.Arriving);
                 // Completion handled by CompletionTracker: Arriving→PlayingArcade
             }
+            else
+            {
+                PublishFailed(ActionId.Character_PlayArcade, "playArcade", "Arcade machine not found in scene");
+            }
         }
 
         private void OnPlayClaw(ActionMessage msg)
@@ -314,6 +360,10 @@ namespace Golem.Character.FSM
                 SetupInteraction(claw, CharacterStateId.PlayingClaw, true);
                 _fsm.ForceTransition(CharacterStateId.Arriving);
                 // Completion handled by CompletionTracker: Arriving→PlayingClaw
+            }
+            else
+            {
+                PublishFailed(ActionId.Character_PlayClaw, "playClaw", "Claw machine not found in scene");
             }
         }
     }

@@ -570,6 +570,17 @@ namespace Golem.Character.Autonomous
             else
                 Managers.PublishAction(action.ActionId);
 
+            // Brief yield to let ActionFailed fire immediately for "not found" cases
+            _publishingAutonomous = false;
+            yield return null;
+
+            // If ActionFailed already recorded the outcome, tracking is done
+            if (_outcomeTracker != null && !_isPerformingAutonomousAction)
+            {
+                _autonomousCoroutine = null;
+                yield break;
+            }
+
             float elapsed = 0f;
             while (elapsed < action.ExpectedDuration && _isPerformingAutonomousAction)
             {
@@ -584,13 +595,52 @@ namespace Golem.Character.Autonomous
                 Managers.PublishAction(ActionId.Character_StandUp);
             }
 
-            _publishingAutonomous = false;
             _isPerformingAutonomousAction = false;
             _autonomousCoroutine = null;
 
-            // Tier 2: Complete tracking if not already handled by ActionMessage
-            if (completed)
-                _outcomeTracker?.CompleteTracking(true);
+            // Tier 2: Complete tracking with FSM-based success evaluation
+            if (completed && _outcomeTracker != null)
+            {
+                bool succeeded = EvaluateActionSuccess(action);
+                _outcomeTracker.CompleteTracking(succeeded);
+            }
+        }
+
+        private bool EvaluateActionSuccess(AutonomousAction action)
+        {
+            switch (action.ActionId)
+            {
+                case ActionId.Character_MoveToLocation:
+                    // Success if we're no longer Walking (arrived somewhere)
+                    return !_fsm.IsInState(CharacterStateId.Walking);
+
+                case ActionId.Character_SitAtChair:
+                    // Success if we actually ended up Sitting
+                    return _fsm.IsInState(CharacterStateId.Sitting);
+
+                case ActionId.Character_ExamineMenu:
+                    return _fsm.IsInState(CharacterStateId.Looking);
+
+                case ActionId.Character_Lean:
+                    return _fsm.IsInState(CharacterStateId.Leaning);
+
+                case ActionId.Character_PlayArcade:
+                    return _fsm.IsInState(CharacterStateId.PlayingArcade);
+
+                case ActionId.Character_PlayClaw:
+                    return _fsm.IsInState(CharacterStateId.PlayingClaw);
+
+                // These are instant/simple actions — always succeed if we got here
+                case ActionId.Character_Idle:
+                case ActionId.Character_StandUp:
+                case ActionId.Character_TurnTo:
+                case ActionId.Character_LookAt:
+                case ActionId.Social_Wave:
+                    return true;
+
+                default:
+                    return true;
+            }
         }
     }
 }
