@@ -86,10 +86,7 @@ namespace Golem.Character.Autonomous
             _outcomeTracker = new ActionOutcomeTracker(_memoryStore, memoryConfig);
             _outcomeTracker.OnOutcomeRecorded += OnOutcomeRecorded;
 
-            if (_decisionConnector != null)
-            {
-                _reflectionEngine = new ReflectionEngine(memoryConfig, _memoryStore, _decisionConnector, _decisionConfig, _runner);
-            }
+            _reflectionEngine = new ReflectionEngine(memoryConfig, _memoryStore);
 
             Debug.Log($"[IdleScheduler] Tier 2 memory enabled (episodes={_memoryStore.Episodic.Episodes.Count}, skills={_memoryStore.Skills.Skills.Count})");
         }
@@ -584,9 +581,11 @@ namespace Golem.Character.Autonomous
             _publishingAutonomous = false;
             yield return null;
 
-            // If ActionFailed already recorded the outcome, tracking is done
-            if (_outcomeTracker != null && !_isPerformingAutonomousAction)
+            // If ActionFailed already recorded the outcome during PublishAction, abort the timer.
+            // Check HasPending: false means RecordOutcome already fired (immediate failure path).
+            if (_outcomeTracker != null && !_outcomeTracker.HasPending)
             {
+                _isPerformingAutonomousAction = false;
                 _autonomousCoroutine = null;
                 yield break;
             }

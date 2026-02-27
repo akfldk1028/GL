@@ -54,10 +54,10 @@ namespace Golem.Character.Autonomous
                     break;
                 }
             }
-            if (!seenRecently) noveltyBonus = 0.2f;
+            if (!seenRecently) noveltyBonus = _config.noveltyBonus;
 
             // Failure bonus
-            float failureBonus = entry.succeeded ? 0f : 0.3f;
+            float failureBonus = entry.succeeded ? 0f : _config.failureBonus;
 
             return Mathf.Clamp01(baseImp + noveltyBonus + failureBonus);
         }

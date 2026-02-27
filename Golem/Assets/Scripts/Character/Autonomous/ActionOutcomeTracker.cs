@@ -22,6 +22,9 @@ namespace Golem.Character.Autonomous
         private Vector3 _pendingPosition;
         private long _pendingTimestamp;
 
+        /// <summary>True while an action outcome is being tracked (between BeginTracking and RecordOutcome).</summary>
+        public bool HasPending => _hasPending;
+
         public event Action<bool> OnOutcomeRecorded;
 
         public ActionOutcomeTracker(MemoryStore memoryStore, MemoryConfigSO config)

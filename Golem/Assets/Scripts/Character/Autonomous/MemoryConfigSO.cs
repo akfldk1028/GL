@@ -30,6 +30,8 @@ namespace Golem.Character.Autonomous
         [Range(0f, 1f)] public float skillPruneThreshold = 0.3f;
         [Tooltip("Chance to explore (skip skill) even when match exists")]
         [Range(0f, 1f)] public float explorationRate = 0.2f;
+        [Tooltip("If existing skill success rate is below this, replace with new successful action")]
+        [Range(0f, 1f)] public float skillReplacementThreshold = 0.5f;
 
         [Header("Reflection")]
         [Tooltip("Trigger reflection every N actions")]
@@ -46,6 +48,10 @@ namespace Golem.Character.Autonomous
         [Header("Importance")]
         [Tooltip("Default base importance for any action (novelty/failure bonuses added on top)")]
         [Range(0f, 1f)] public float defaultBaseImportance = 0.3f;
+        [Tooltip("Bonus importance for actions not seen in recent episodes")]
+        [Range(0f, 1f)] public float noveltyBonus = 0.2f;
+        [Tooltip("Bonus importance for failed actions")]
+        [Range(0f, 1f)] public float failureBonus = 0.3f;
 
         [Header("Reflection Thresholds")]
         [Tooltip("Minimum repetition count to generate 'too frequent' observation")]

@@ -235,31 +235,13 @@ namespace Golem.Character.Autonomous
             }
         }
 
-        public string[] GetNearbyTags()
+        /// <summary>
+        /// Core scan: finds all nearby objects within radius grouped by tag.
+        /// Returns list of (objectName, tag) pairs.
+        /// </summary>
+        private List<(string name, string tag)> ScanNearby()
         {
-            var found = new List<string>();
-            float radius = _config.nearbyObjectRadius;
-            Vector3 pos = _characterTransform.position;
-
-            foreach (string tag in _config.nearbyObjectTags)
-            {
-                GameObject[] objs;
-                try { objs = GameObject.FindGameObjectsWithTag(tag); } catch { continue; }
-                if (objs == null) continue;
-
-                foreach (var obj in objs)
-                {
-                    if (Vector3.Distance(obj.transform.position, pos) <= radius && !found.Contains(tag))
-                        found.Add(tag);
-                }
-            }
-
-            return found.ToArray();
-        }
-
-        private string ScanNearbyObjects()
-        {
-            var found = new List<string>();
+            var results = new List<(string name, string tag)>();
             float radius = _config.nearbyObjectRadius;
             Vector3 pos = _characterTransform.position;
 
@@ -272,11 +254,33 @@ namespace Golem.Character.Autonomous
                 foreach (var obj in objs)
                 {
                     if (Vector3.Distance(obj.transform.position, pos) <= radius)
-                        found.Add($"{obj.name} ({tag})");
+                        results.Add((obj.name, tag));
                 }
             }
 
-            return found.Count > 0 ? string.Join(", ", found) : "nothing nearby";
+            return results;
+        }
+
+        public string[] GetNearbyTags()
+        {
+            var nearby = ScanNearby();
+            var uniqueTags = new List<string>();
+            foreach (var (_, tag) in nearby)
+            {
+                if (!uniqueTags.Contains(tag))
+                    uniqueTags.Add(tag);
+            }
+            return uniqueTags.ToArray();
+        }
+
+        private string ScanNearbyObjects()
+        {
+            var nearby = ScanNearby();
+            if (nearby.Count == 0) return "nothing nearby";
+            var descriptions = new List<string>(nearby.Count);
+            foreach (var (name, tag) in nearby)
+                descriptions.Add($"{name} ({tag})");
+            return string.Join(", ", descriptions);
         }
     }
 

@@ -15,12 +15,7 @@ namespace Golem.Character.Autonomous
         private float _accumulatedImportance;
         private bool _isReflecting;
 
-        public ReflectionEngine(
-            MemoryConfigSO config,
-            MemoryStore memoryStore,
-            AIDecisionConnector connector,
-            AIDecisionConfigSO decisionConfig,
-            MonoBehaviour runner)
+        public ReflectionEngine(MemoryConfigSO config, MemoryStore memoryStore)
         {
             _config = config;
             _memoryStore = memoryStore;

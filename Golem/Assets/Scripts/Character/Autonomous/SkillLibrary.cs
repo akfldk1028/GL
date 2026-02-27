@@ -58,7 +58,7 @@ namespace Golem.Character.Autonomous
                 {
                     // Different action for same situation — track as use
                     existing.useCount++;
-                    if (succeeded && existing.SuccessRate < 0.5f)
+                    if (succeeded && existing.SuccessRate < _config.skillReplacementThreshold)
                     {
                         // Replace with better-performing action
                         existing.recommendedActionId = actionId;
